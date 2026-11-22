@@ -621,6 +621,22 @@ function animalUnderCrosshair(maxD = 900) {
   }
   return best;
 }
+// ---- shot feedback: hit marker, impact puffs, thwack, wounded animals with a blood trail
+const puffTex = (c) => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 30); gr.addColorStop(0, c); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(cv); };
+const PUFF = { dirt: puffTex('rgba(150,120,85,0.95)'), hit: puffTex('rgba(150,20,15,0.95)') };
+const puffs = []; for (let i = 0; i < 16; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF.dirt, transparent: true, depthWrite: false })); sp.visible = false; scene.add(sp); puffs.push({ sp, life: 0, s: 1 }); }
+function puffAt(p, kind, d) { const q = puffs.find((x) => x.life <= 0) || puffs[0]; q.sp.material.map = PUFF[kind]; q.sp.material.needsUpdate = true; q.sp.position.copy(p); q.s = Math.max(0.6, d * 0.006) * (kind === 'dirt' ? 1.6 : 1); q.sp.scale.setScalar(q.s); q.life = 1.1; q.sp.visible = true; }
+function updatePuffs(dt) { for (const q of puffs) if (q.life > 0) { q.life -= dt; q.sp.material.opacity = Math.max(0, q.life / 1.1); q.sp.scale.setScalar(q.s * (1 + (1.1 - q.life) * 1.4)); q.sp.position.y += dt * 0.6; if (q.life <= 0) q.sp.visible = false; } }
+const bloodMat = new THREE.MeshBasicMaterial({ color: 0x9a1210, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+const bloodGeo = new THREE.CircleGeometry(0.28, 10); bloodGeo.rotateX(-Math.PI / 2);
+const blood = []; let bloodI = 0; for (let i = 0; i < 120; i++) { const m = new THREE.Mesh(bloodGeo, bloodMat); m.visible = false; scene.add(m); blood.push(m); }
+function dropBlood(x, z) { const m = blood[bloodI++ % blood.length]; m.position.set(x + rand(-0.3, 0.3), heightAt(x, z) + 0.05, z + rand(-0.3, 0.3)); m.scale.setScalar(rand(0.6, 1.4)); m.visible = true; }
+let hitT = 0; function hitMark(kind) { const el = $('hitmark'); el.className = kind; hitT = 0.7; }
+function groundImpact(maxD = 1200) { // where the bullet hits the dirt
+  camera.getWorldDirection(_v); const o = camera.position;
+  for (let t = 4; t < maxD; t += 2) { const x = o.x + _v.x * t, y = o.y + _v.y * t, z = o.z + _v.z * t; if (y <= heightAt(x, z)) return { p: new THREE.Vector3(x, heightAt(x, z) + 0.3, z), d: t }; }
+  return null;
+}
 function shoot() {
   if (!scoping || player.inVehicle) return;
   const hit = animalUnderCrosshair(), aim = player.crew.stats.aim, maxRange = 150 + aim * 30 + rangeBonus();
@@ -630,8 +646,13 @@ function shoot() {
   }
   flashShot(); audio.shot();
   for (const a of animals) if (a.state !== 'down' && a.pos.distanceTo(player.pos) < 700) { a.state = 'flee'; a.t = rand(6, 10); a.fleeFrom = player.pos.clone(); }
-  if (hit && hit.vital && hit.d <= maxRange) {
-    const a = hit.a; a.state = 'down'; a.gone = 90;
+  const inRange = hit && hit.d <= maxRange, kill = inRange && (hit.vital || hit.a.wounded), wound = inRange && !kill;
+  if (hit && inRange) { // impact on the animal
+    const s2 = hit.a.kind === 'elk' ? 1.45 : 1, p = hit.a.pos.clone(); p.y += 1.05 * s2; puffAt(p, 'hit', hit.d);
+    hitMark(kill ? 'kill' : 'hit'); setTimeout(() => audio.thwack(hit.d), Math.min(1800, hit.d / 340 * 1000));
+  } else { const g = groundImpact(); if (g) puffAt(g.p, 'dirt', g.d); }
+  if (kill) {
+    const a = hit.a; a.state = 'down'; a.gone = 90; a.wounded = false;
     const t = { kind: a.kind, points: a.points, dist: Math.round(hit.d), who: player.crew.name, when: Date.now() }; tags.push(t); store.set('tags', tags); updateTags();
     toast('Tagged!', `${label(a)} · ${t.dist} m · ${player.crew.name}`, 4);
     slowT = 1.6; drawTrophyBoard();
@@ -639,9 +660,14 @@ function shoot() {
     if (withYou('kyle')) setTimeout(() => { player.stamina = 100; player.exhausted = false; say('Kyle', pick(['I\'ll pack it out. You keep hunting.', 'Got it. I could carry two.'])); }, 7600);
     setTimeout(() => { const n = crewLine('harvest'); for (const f of npcs) if (f.mode === 'follow') { f.talkT = 0; f.model.userData.ch.play('Dance_Loop', 0.2); f.cheerT = 2.5; } }, 2600);
     setTimeout(() => toast('Trophy photo?', touchMode ? 'Tap Photo to snap one for the group text.' : 'Press P to snap one for the group text.', 3), 5200);
+  } else if (wound) {
+    const a = hit.a; a.wounded = true; a.woundT = 240; a.t = rand(8, 12); a.lastDrop = a.pos.clone(); dropBlood(a.pos.x, a.pos.z);
+    toast('Hit!', 'It\'s wounded. Follow the blood trail and finish it.', 3.2);
+    setTimeout(() => { if (!crewLine('spot', (n) => false)) { const h = player.crew.id === 'hewitt' ? null : npcs.find((n) => n.crew.id === 'hewitt' && n.mode !== 'idle'); if (h) { say('Hewitt', pick(['Hit him. Little far back. We track.', 'He\'s hit. Give it a minute, then follow the blood.'])); h.talkT = 2.5; } else say(player.crew.name, pick(['Hit him! Where\'d he go?', 'He\'s hit. Let\'s track him.'])); } }, 1200);
   } else {
+    hitMark('miss');
     if (hit && hit.d > maxRange) toast('Missed', `Too far for ${player.crew.name} (${Math.round(hit.d)} m). Get closer.`, 2.5);
-    else if (hit) toast('Missed', 'Just behind the shoulder. It took off.', 2.2);
+    else toast('Missed', hit ? 'Just over its back. It took off.' : 'Dirt flew where it landed.', 2.2);
     setTimeout(() => bark('miss'), 600);
     setTimeout(() => crewLine('roast'), 2300);
   }
@@ -1093,7 +1119,7 @@ function drawAdvantage(dt) {
   for (const v of vehicles) if (v !== player.inVehicle) dot(v.pos.x, v.pos.z, v === truck ? '#c0473a' : '#f2f2ee', 6, true);
   for (const s of tinSpots) if (s.mesh && !taken.has(s.id) && Math.hypot(s.x - player.pos.x, s.z - player.pos.z) < RANGE) dot(s.x, s.z, FLAVORS[s.flavor].color, 5, false);
   for (const a of animals) { if (a.state === 'down') continue; const d = a.pos.distanceTo(player.pos); if (d > RANGE * 1.6) continue;
-    const col = a.kind === 'elk' ? (a.male ? '#ffb02a' : '#d9844a') : (a.male ? '#9fe070' : '#cfe7b8'); dot(a.pos.x, a.pos.z, col, a.male ? 7 : 5, a.male); }
+    const col = a.kind === 'elk' ? (a.male ? '#ffb02a' : '#d9844a') : (a.male ? '#9fe070' : '#cfe7b8'); dot(a.pos.x, a.pos.z, a.wounded ? '#e0312a' : col, a.male ? 7 : 5, a.male); if (a.wounded) { const [wx, wy] = toMap(a.pos.x, a.pos.z); if (Math.hypot(wx - R, wy - R) < R - 12) { advG.strokeStyle = '#e0312a'; advG.lineWidth = 3; advG.beginPath(); advG.arc(wx, wy, 10 + (performance.now() / 120 % 8), 0, 7); advG.stroke(); } } }
   if (waypoint) dot(waypoint.x, waypoint.z, '#ffd34d', 8, true);
   advG.restore();
   advG.fillStyle = '#3fa9f5'; advG.beginPath(); advG.moveTo(R, R - 13); advG.lineTo(R + 9, R + 9); advG.lineTo(R, R + 4); advG.lineTo(R - 9, R + 9); advG.closePath(); advG.fill(); advG.strokeStyle = '#fff'; advG.lineWidth = 2; advG.stroke();
@@ -1221,13 +1247,14 @@ function updateAnimals(dt) {
     } else if (a.state === 'flee') {
       const want = Math.atan2(a.pos.x - a.fleeFrom.x, a.pos.z - a.fleeFrom.z) + Math.sin(a.t * 1.3) * 0.4;
       a.heading += Math.atan2(Math.sin(want - a.heading), Math.cos(want - a.heading)) * dt * 3;
-      a.speed = a.kind === 'elk' ? 11 : 13;
+      a.speed = (a.kind === 'elk' ? 11 : 13) * (a.wounded ? 0.6 : 1);
       if (a.t < 0) { a.state = 'graze'; a.t = rand(3, 8); }
     } else if (a.state === 'graze') {
       a.speed = 0; if (a.t < 0) { a.state = 'walk'; a.t = rand(3, 9); a.heading += rand(-1.5, 1.5); }
     } else if (a.state === 'walk') {
       a.speed = 1.3; if (a.t < 0) { a.state = 'graze'; a.t = rand(3, 10); }
     }
+    if (a.wounded) { a.woundT -= dt; if (a.woundT < 0) a.wounded = false; if (a.pos.distanceTo(a.lastDrop) > (a.speed > 4 ? 2.5 : 6)) { dropBlood(a.pos.x, a.pos.z); a.lastDrop.copy(a.pos); } }
     if (a.speed > 0) {
       const nx = a.pos.x + Math.sin(a.heading) * a.speed * dt, nz = a.pos.z + Math.cos(a.heading) * a.speed * dt;
       if (Math.abs(nx) > HALF - 40 || Math.abs(nz) > HALF - 40 || classify(nx, nz) === 'urban') a.heading += Math.PI * 0.7 * dt * 4;
@@ -1297,7 +1324,7 @@ function updateHud(dt) {
 function frame() {
   const rdt = Math.min(clock.getDelta(), 0.05); slowT -= rdt; const dt = slowT > 0 ? rdt * 0.25 : (fx.calm > 0 && scoping) ? rdt * 0.55 : rdt;
   if (started) { updatePowers(rdt, clock.elapsedTime); updatePlayer(dt); updateAnimals(dt); updateHud(rdt); updateBanter(rdt); gameHour = Math.min(19, gameHour + rdt / 240); }
-  updateNpcs(dt); updateDust(dt);
+  updateNpcs(dt); updateDust(dt); updatePuffs(rdt); if (hitT > 0) { hitT -= rdt; if (hitT <= 0) $('hitmark').className = ''; }
   todT -= rdt; if (todT < 0) { todT = 1; applyTimeOfDay(); }
   if (started) {
     const v = player.inVehicle;

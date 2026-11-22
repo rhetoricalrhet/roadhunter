@@ -173,6 +173,12 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
 .hbox .go{justify-self:center;padding:12px 40px;position:sticky;bottom:0;box-shadow:0 -8px 16px #1b1712}
 #helpBtn{margin:6px 0 0 6px;pointer-events:auto;background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--muted);font:600 11px Inter,sans-serif;padding:3px 8px;cursor:pointer}
 @media (max-height:520px){.hbox{padding:10px 14px;gap:6px}.hbox h2{font-size:20px}.hi{padding:5px 8px;font-size:12px}.hi .ic{flex-basis:28px;height:28px}}
+#hitmark{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;opacity:0;pointer-events:none}
+#hitmark:before,#hitmark:after{content:"";position:absolute;left:50%;top:0;width:3px;height:100%;margin-left:-1.5px;background:currentColor;
+  -webkit-mask:linear-gradient(#000 0 35%,transparent 35% 65%,#000 65%);mask:linear-gradient(#000 0 35%,transparent 35% 65%,#000 65%)}
+#hitmark:before{transform:rotate(45deg)}#hitmark:after{transform:rotate(-45deg)}
+#hitmark.hit,#hitmark.kill,#hitmark.miss{animation:hm .7s ease-out forwards}#hitmark.hit{color:#fff}#hitmark.kill{color:#ff3b2f;width:60px;height:60px;margin:-30px}#hitmark.miss{color:rgba(255,255,255,.35);width:30px;height:30px;margin:-15px}
+@keyframes hm{0%{opacity:1;transform:scale(1.5)}25%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
 </style>
 <div id="loading"><div class="lw"><div>Loading the valley…</div><div class="lbar"><i id="loadbar"></i></div><div class="tip" id="tip">Tip: Skin runs out of breath in about 3 seconds. Plan accordingly.</div></div></div>
 
@@ -237,6 +243,7 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
   <div id="cross"></div>
   <div id="scope" class="hidden"></div>
   <div id="scopeinfo" class="hidden"></div>
+  <div id="hitmark"></div>
   <div id="lock" class="hidden">Click to look around</div>
   <div id="touchui">
     <div id="stick"><div id="knob"></div></div>

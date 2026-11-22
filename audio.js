@@ -108,6 +108,12 @@ export const audio = {
   power() { this.tone([330, 495, 660, 990], 0.07, 0, 'triangle', 0.1); },
   chime() { this.tone([660, 830, 990, 1320], 0.14, 0.03, 'sine', 0.12); },
   fail() { this.tone([400, 300, 220], 0.18, 0.03, 'triangle', 0.12); },
+  thwack(dist = 200) { // bullet hitting the animal, heard a moment later
+    if (!ctx || !this.on) return; const t = ctx.currentTime, v = Math.max(0.08, 0.5 * (1 - dist / 900));
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; const g = ctx.createGain(); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    src.connect(f).connect(g).connect(master); src.start(t, 0.5, 0.18);
+    const o = ctx.createOscillator(), og = ctx.createGain(); o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); og.gain.setValueAtTime(v * 0.8, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.14); o.connect(og).connect(master); o.start(t); o.stop(t + 0.16);
+  },
   door() {
     if (!ctx) return; const t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500; const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
