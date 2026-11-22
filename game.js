@@ -420,9 +420,23 @@ function setCrew(id) {
   $('whoImg').src = `assets/portraits/${c.id}.jpg`; $('whoName').textContent = c.name; $('whoRole').textContent = c.role + ' · ' + c.ability;
   store.set('crew', id); renderCrewBar(); if (prev) ab.cdBy[prev.id] = ab.cd; ab.cd = ab.cdBy[id] || 0; ab.max = AB_CD[id]; $('gadgets').classList.add('hidden');
 }
+// switch hunters any time, even mid-mission in the truck: the new hunter takes the wheel, the old one takes their seat
+function switchTo(id) {
+  if (!started || id === player.crew.id) return;
+  const v = player.inVehicle, prevId = player.crew.id;
+  if (!v) { setCrew(id); bark('select'); return; }
+  const n = npcs.find((q) => q.crew.id === id); let seat = null;
+  if (n && n.mode === 'ride' && n.vehicle === v) { seat = n.seat; v.riders = v.riders.filter((r) => r !== n); n.mode = 'follow'; n.vehicle = null; n.seat = null; }
+  setCrew(id);
+  seatModel(player.model, v, v.seats.find((q) => q.driver)); player.model.visible = true;
+  const pn = npcs.find((q) => q.crew.id === prevId), free = seat || v.seats.find((q) => !q.driver && !v.riders.some((r) => r.seat === q));
+  if (pn && free) { pn.mode = 'ride'; pn.vehicle = v; pn.seat = free; seatModel(pn.model, v, free); v.riders.push(pn); }
+  renderCrewBar(); bark('select');
+}
 function renderCrewBar() {
   const el = $('crewbar'); if (!el) return;
-  el.innerHTML = npcs.filter((n) => n.mode !== 'idle').map((n) => `<img src="assets/portraits/${n.crew.id}.jpg" alt="${n.crew.name}" title="${n.crew.name}">`).join('');
+  el.innerHTML = npcs.filter((n) => n.mode !== 'idle').map((n) => `<img src="assets/portraits/${n.crew.id}.jpg" alt="${n.crew.name}" title="Switch to ${n.crew.name}" data-id="${n.crew.id}">`).join('');
+  for (const im of el.children) im.onclick = (e) => { e.stopPropagation(); switchTo(im.dataset.id); };
 }
 const SLOTS = [[-2.4, -0.6], [2.4, -0.6], [-3.6, -2.6], [3.6, -2.6], [-4.8, -0.2]]; // beside the hunter, out of the camera line
 const angLerp = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, t);
@@ -501,7 +515,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyN') $('sndBtn').textContent = audio.toggle() ? 'Sound on' : 'Sound off';
   if (e.code === 'KeyZ' && scoping) cycleZoom();
   const n = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5 }[e.code];
-  if (n != null && !player.inVehicle) { setCrew(CREW[n].id); bark('select'); }
+  if (n != null) switchTo(CREW[n].id);
   if (e.code === 'Space') e.preventDefault();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -534,7 +548,7 @@ if (touchMode) {
   const run = $('tRun');
   run.addEventListener('pointerdown', () => { touchSprint = true; run.classList.add('on'); });
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) run.addEventListener(ev, () => { touchSprint = false; run.classList.remove('on'); });
-  $('who').addEventListener('click', () => { if (!started || player.inVehicle) return; const i = CREW.findIndex((c) => c.id === player.crew.id); setCrew(CREW[(i + 1) % CREW.length].id); bark('select'); });
+  $('who').addEventListener('click', () => { if (!started) return; const i = CREW.findIndex((c) => c.id === player.crew.id); switchTo(CREW[(i + 1) % CREW.length].id); });
 }
 $('map').addEventListener('click', () => $('map').classList.add('hidden'));
 $('photoClose').onclick = () => $('photo').classList.add('hidden');
@@ -1317,4 +1331,4 @@ player.pos.y = heightAt(player.pos.x, player.pos.z);
 $('loading').classList.add('hidden');
 frame();
 // test hooks for automated playtesting
-window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
+window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
