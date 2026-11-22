@@ -1,0 +1,21 @@
+{
+ "grid": 513,
+ "x0": -14662.556973788323,
+ "z0": -4312.516756996566,
+ "size_m": 3450.013405597252,
+ "min_elev": 1138.10595703125,
+ "max_elev": 1332.9508056640625,
+ "nw": [
+  -113.917236328125,
+  45.18978009667531
+ ],
+ "se": [
+  -113.873291015625,
+  45.15880073835211
+ ],
+ "sources": [
+  "USGS 3DEP elevation, public domain",
+  "USGS NAIP imagery, public domain",
+  "(c) OpenStreetMap contributors, ODbL"
+ ]
+}

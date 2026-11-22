@@ -41,6 +41,7 @@ const H = new Float32Array(G * G);
 { const q = rawH; const r = meta.max_elev - meta.min_elev; for (let i = 0; i < q.length; i++) H[i] = (q[i] / 65535) * r; }
 
 function heightAt(x, z) {
+  const TT = window.__TOWN; if (TT && TT.ready && x > TT.x0 && x < TT.x1 && z > TT.z0 && z < TT.z1) return townHeight(x, z);
   const fx = clamp((x / S + 0.5) * (G - 1), 0, G - 1.001), fz = clamp((z / S + 0.5) * (G - 1), 0, G - 1.001);
   const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
   const a = H[j * G + i], b = H[j * G + i + 1], c = H[(j + 1) * G + i], d = H[(j + 1) * G + i + 1];
@@ -129,7 +130,7 @@ terrain.receiveShadow = true; scene.add(terrain);
     bh[j * n + i] = (q[j * n + i] / 65535) * r + off - (inside ? 25 : 6);
   }
   const back = new THREE.Mesh(gridGeometry(n, bmeta.size_m, bh, bmeta.x_min, bmeta.z_min), new THREE.MeshLambertMaterial({ map: loadTex('assets/backdrop.jpg') }));
-  scene.add(back);
+  scene.add(back); scene.userData.back = back;
 }
 
 // ---------------------------------------------------------------- vegetation
@@ -151,6 +152,7 @@ sage.frustumCulled = rocks.frustumCulled = false; rocks.castShadow = true; scene
 const dummy = new THREE.Object3D(), tmpC = new THREE.Color();
 let lastChunk = '';
 function refillNear(px, pz) {
+  const TT = window.__TOWN; if (TT && TT.ready && px > TT.x0 && px < TT.x1 && pz > TT.z0 && pz < TT.z1) return;
   const ci = Math.floor(px / CH), cj = Math.floor(pz / CH), key = ci + ',' + cj;
   if (key === lastChunk) return; lastChunk = key;
   let ns = 0, nr = 0;
@@ -211,7 +213,7 @@ function refillNear(px, pz) {
 
 // ---------------------------------------------------------------- real roads, water, buildings (OpenStreetMap)
 const ROADGRID = 10, RN = Math.ceil(S / ROADGRID), roadCells = new Uint8Array(RN * RN);
-function roadAt(x, z) { const i = Math.floor((x + HALF) / ROADGRID), j = Math.floor((z + HALF) / ROADGRID); return i >= 0 && j >= 0 && i < RN && j < RN ? roadCells[j * RN + i] : 0; }
+function roadAt(x, z) { const TT = window.__TOWN; if (TT && TT.ready && x > TT.x0 && x < TT.x1 && z > TT.z0 && z < TT.z1) return townRoadAt(x, z); const i = Math.floor((x + HALF) / ROADGRID), j = Math.floor((z + HALF) / ROADGRID); return i >= 0 && j >= 0 && i < RN && j < RN ? roadCells[j * RN + i] : 0; }
 const onRoad = (x, z) => roadAt(x, z) >= 1, onPaved = (x, z) => roadAt(x, z) === 2;
 const waterCells = new Uint8Array(RN * RN).fill(255); // distance to water in 2 m units (255 = far)
 function waterDistAt(x, z) { const i = Math.floor((x + HALF) / ROADGRID), j = Math.floor((z + HALF) / ROADGRID); return i >= 0 && j >= 0 && i < RN && j < RN ? waterCells[j * RN + i] * 2 : 999; }
@@ -756,7 +758,7 @@ addEventListener('wheel', (e) => { if (scoping) { zoomIdx = clamp(zoomIdx + (e.d
 // ---------------------------------------------------------------- map
 const mapbox = $('mapbox'), mapDots = {};
 function mapDot(id, color, text) { const d = document.createElement('div'); d.className = 'dot'; d.style.background = color; mapbox.appendChild(d); let l = null; if (text) { l = document.createElement('div'); l.className = 'lbl'; l.textContent = text; mapbox.appendChild(l); } mapDots[id] = { d, l }; }
-function setDot(id, x, z) { const m = mapDots[id], px = ((x / S) + 0.5) * 100 + '%', pz = ((z / S) + 0.5) * 100 + '%'; m.d.style.left = px; m.d.style.top = pz; if (m.l) { m.l.style.left = px; m.l.style.top = pz; } }
+function setDot(id, x, z) { const m = mapDots[id], F = window.__MF || { x0: -HALF, z0: -HALF, s: S }, fx = (x - F.x0) / F.s, fz = (z - F.z0) / F.s, px = fx * 100 + '%', pz = fz * 100 + '%'; m.at = [x, z]; const out = fx < 0 || fx > 1 || fz < 0 || fz > 1; m.d.style.visibility = out ? 'hidden' : ''; if (m.l) m.l.style.visibility = out ? 'hidden' : ''; m.d.style.left = px; m.d.style.top = pz; if (m.l) { m.l.style.left = px; m.l.style.top = pz; } }
 mapDot('hq', '#f08a24', 'Crew HQ'); mapDot('elk', 'transparent', 'Eagle Valley · elk country'); mapDots.elk.d.style.border = 'none';
 mapDot('truck', '#8c2a22', 'Truck'); mapDot('xterra', '#f2f2ee', 'Xterra'); mapDot('me', '#3fa9f5', 'You');
 setDot('hq', HQ.x, HQ.z); setDot('elk', (ELK_ZONE.x0 + ELK_ZONE.x1) / 2, (ELK_ZONE.z0 + ELK_ZONE.z1) / 2);
@@ -819,9 +821,9 @@ function teleport(x, z, heading, { inTruck = false, speed = 0 } = {}) {
   if (inTruck) { boardVehicle(truck); truck.speed = speed; }
   camYaw = heading + Math.PI; lastChunk = '';
 }
-function nearestRoadPoint(x, z, maxR = 600) {
+function nearestRoadPoint(x, z, maxR = 600, roads = vec.roads) {
   let best = null, bd = maxR;
-  for (const r of vec.roads) for (const p of r.pts) { const d = Math.hypot(p[0] - x, p[1] - z); if (d < bd) { bd = d; best = { p, r }; } }
+  for (const r of roads) for (const p of r.pts) { const d = Math.hypot(p[0] - x, p[1] - z); if (d < bd) { bd = d; best = { p, r }; } }
   return best;
 }
 const DESTS = {
@@ -843,17 +845,18 @@ const DESTS = {
     teleport(px - Math.sin(face) * 45, pz - Math.cos(face) * 45, face);
     player.pos.set(px, heightAt(px, pz), pz); player.yaw = face; camYaw = face + Math.PI; camPitch = 0.12; player.crouch = true; placeCrewAround(px - Math.sin(face) * 3, pz - Math.cos(face) * 3);
     setTimeout(() => { crewLine('spot', (n) => n.crew.id === 'hewitt') || toast('Elk below', 'Herd about 240 m out. Stay low, scope in.', 4); }, 1500); },
+  salmon: () => { teleport(VENTRY.x, VENTRY.z, VENTRY.h + Math.PI, { inTruck: true }); setTimeout(goTown, 300); },
   amish: () => { teleport(HQ.x - 12, HQ.z + 14, 1.2 + Math.PI, { inTruck: true }); setTimeout(() => { offered.add('dawg'); startMission('amish'); }, 900); },
   shortcut: () => { teleport(HQ.x - 12, HQ.z + 14, 1.2 + Math.PI, { inTruck: true }); setTimeout(() => { offered.add('skin'); startMission('shortcut'); }, 900); },
   cruise: () => { teleport(-3353.5, 3743.3, Math.atan2(-3408.3 - -3353.5, 3703.6 - 3743.3), { inTruck: true, speed: 18 }); setTimeout(() => crewLine('ride'), 1500); },
 };
 mapbox.addEventListener('click', (e) => { // fast travel: tap a spot on the map
   e.stopPropagation(); if (!started) return;
-  const r = mapbox.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width - 0.5) * S, z = ((e.clientY - r.top) / r.height - 0.5) * S;
-  let hit = nearestRoadPoint(x, z, 800); if (!hit) { toast('No road there', 'Tap closer to a road.', 2); return; }
-  let skinDetour = false; if (has('skin') && Math.random() < 0.2) { const alt = nearestRoadPoint(x + rand(-1, 1) * 1800, z + rand(-1, 1) * 1800, 1500); if (alt) { hit = alt; skinDetour = true; } }
+  const r = mapbox.getBoundingClientRect(), F = window.__MF, x = F.x0 + (e.clientX - r.left) / r.width * F.s, z = F.z0 + (e.clientY - r.top) / r.height * F.s;
+  let hit = nearestRoadPoint(x, z, 800, curRoads()); if (!hit) { toast('No road there', 'Tap closer to a road.', 2); return; }
+  let skinDetour = false; if (area === 'valley' && has('skin') && Math.random() < 0.2) { const alt = nearestRoadPoint(x + rand(-1, 1) * 1800, z + rand(-1, 1) * 1800, 1500); if (alt) { hit = alt; skinDetour = true; } }
   const P = hit.r.pts, k = P.indexOf(hit.p), q = P[Math.min(P.length - 1, k + 3)], p0 = P[Math.max(0, k - 3)];
-  teleport(hit.p[0], hit.p[1], Math.atan2(q[0] - p0[0], q[1] - p0[1]), { inTruck: true });
+  if (area === 'town') { if (!player.inVehicle) { const v = nearestVehicle(); if (v) boardVehicle(v); } moveRig(hit.p[0], hit.p[1], Math.atan2(q[0] - p0[0], q[1] - p0[1]), 0); } else teleport(hit.p[0], hit.p[1], Math.atan2(q[0] - p0[0], q[1] - p0[1]), { inTruck: true });
   $('map').classList.add('hidden'); toast('Fast travel', hit.r.name || 'Back road', 2);
   if (skinDetour) { setTimeout(() => say('Skin', 'I know a shortcut.'), 900); setTimeout(() => say(player.crew.id === 'skin' ? 'Dawg' : player.crew.name, 'This is the wrong road, Skin.'), 3800); }
 });
@@ -961,7 +964,7 @@ const chevMat = new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true
 const chevs = []; for (let i = 0; i < 24; i++) { const m = new THREE.Mesh(chevGeo, chevMat); m.visible = false; m.renderOrder = 3; m.rotation.order = 'YXZ'; m.rotation.x = -0.55; scene.add(m); chevs.push(m); }
 function updateNav(dt) {
   navCalloutCd -= dt;
-  const show = navOn && waypoint && Math.hypot(waypoint.x - player.pos.x, waypoint.z - player.pos.z) > 60;
+  const show = area === 'valley' && navOn && waypoint && Math.hypot(waypoint.x - player.pos.x, waypoint.z - player.pos.z) > 60;
   if (!show) { for (const c of chevs) c.visible = false; $('nav').classList.add('hidden'); return; }
   navT -= dt; if (navT <= 0) { navT = 0.4; navPath = tracePath(player.pos.x, player.pos.z, 400); }
   const P = navPath; let k = 0;
@@ -1265,7 +1268,7 @@ function drawAdvantage(dt) {
   advG.beginPath(); advG.moveTo(R, 0); advG.lineTo(R, W); advG.moveTo(0, R); advG.lineTo(W, R); advG.stroke();
   // roads near you
   advG.strokeStyle = 'rgba(220,200,160,.35)'; advG.lineWidth = 3;
-  for (const r of vec.roads) { let on = false; advG.beginPath(); for (let i = 0; i < r.pts.length; i += 2) { const p = r.pts[i]; if (Math.abs(p[0] - player.pos.x) > RANGE * 1.5 || Math.abs(p[1] - player.pos.z) > RANGE * 1.5) { on = false; continue; } const [mx, my] = toMap(p[0], p[1]); on ? advG.lineTo(mx, my) : advG.moveTo(mx, my); on = true; } advG.stroke(); }
+  for (const r of curRoads()) { let on = false; advG.beginPath(); for (let i = 0; i < r.pts.length; i += 2) { const p = r.pts[i]; if (Math.abs(p[0] - player.pos.x) > RANGE * 1.5 || Math.abs(p[1] - player.pos.z) > RANGE * 1.5) { on = false; continue; } const [mx, my] = toMap(p[0], p[1]); on ? advG.lineTo(mx, my) : advG.moveTo(mx, my); on = true; } advG.stroke(); }
   const dot = (x, z, col, rad, ring) => { let [mx, my] = toMap(x, z); const dd = Math.hypot(mx - R, my - R); if (dd > R - rad - 3) { mx = R + (mx - R) / dd * (R - rad - 3); my = R + (my - R) / dd * (R - rad - 3); advG.globalAlpha = 0.55; } advG.fillStyle = col; advG.beginPath(); advG.arc(mx, my, rad, 0, 7); advG.fill(); if (ring) { advG.strokeStyle = '#fff'; advG.lineWidth = 2; advG.stroke(); } advG.globalAlpha = 1; };
   for (const v of vehicles) if (v !== player.inVehicle) dot(v.pos.x, v.pos.z, v === truck ? '#c0473a' : '#f2f2ee', 6, true);
   for (const s of tinSpots) if (s.mesh && !taken.has(s.id) && Math.hypot(s.x - player.pos.x, s.z - player.pos.z) < RANGE) dot(s.x, s.z, FLAVORS[s.flavor].color, 5, false);
@@ -1466,6 +1469,7 @@ function maybeBear(a) {
 function updateEncounters(dt) {
   stallT = Math.max(0, stallT - dt);
   if (enc.active) { if (enc.active.tick(dt)) { enc.active.end(); enc.active = null; enc.t = rand(150, 230); } return; }
+  if (area === 'town') return;
   enc.t -= dt; if (enc.t > 0 || scoping || kidsRing > 0 || fx.drone > 0) return;
   const pool = Object.keys(ENCOUNTERS).filter((k) => k !== enc.last && ENCOUNTERS[k].ok());
   if (!pool.length) { enc.t = 15; return; }
@@ -1507,6 +1511,133 @@ function forceEncounter(k) { if (enc.active) { enc.active.end(); enc.active = nu
   sg.position.set(sx, heightAt(sx, sz) + 2.6, sz); sg.rotation.y = 2.245; scene.add(sg); for (const o of [-2, 2]) scene.add(box(0.22, 3, 0.22, std(0x5a4632), sx + Math.cos(2.245) * o, heightAt(sx, sz) + 1.5, sz - Math.sin(2.245) * o));
 }
 mapDot('evhq', '#c9c4b6', 'Ranch HQ'); setDot('evhq', 1789, -1462);
+// ---------------------------------------------------------------- Salmon Run: downtown Salmon as its own area (real streets, footprints, businesses)
+const TOWN = { H: null, ready: false, loading: null }; window.__TOWN = TOWN;
+let area = 'valley';
+let AX0 = -HALF + 10, AX1 = HALF - 10, AZ0 = -HALF + 10, AZ1 = HALF - 10; // movement bounds for the current area
+function townHeight(x, z) {
+  const T = TOWN, fx = clamp((x - T.x0) / T.size * (T.G - 1), 0, T.G - 1.001), fz = clamp((z - T.z0) / T.size * (T.G - 1), 0, T.G - 1.001);
+  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j, Hh = T.H, G2 = T.G;
+  return lerp(lerp(Hh[j * G2 + i], Hh[j * G2 + i + 1], tx), lerp(Hh[(j + 1) * G2 + i], Hh[(j + 1) * G2 + i + 1], tx), tz);
+}
+const inTown = (x, z) => TOWN.ready && x > TOWN.x0 && x < TOWN.x1 && z > TOWN.z0 && z < TOWN.z1;
+function townRoadAt(x, z) { const T = TOWN, i = Math.floor((x - T.x0) / ROADGRID), j = Math.floor((z - T.z0) / ROADGRID); return i >= 0 && j >= 0 && i < T.RN && j < T.RN ? T.roads[j * T.RN + i] : 0; }
+const curRoads = () => (area === 'town' && TOWN.ready ? TOWN.vec.roads : vec.roads);
+const KIND_COL = { fuel: '#1f4e8c', restaurant: '#8c2a22', fast_food: '#b8401f', cafe: '#6b3f22', bakery: '#a0522d', pub: '#2f5233', bar: '#2f5233', nightclub: '#3b2a52', supermarket: '#2e6b3a', doityourself: '#b22222', fishing: '#2c5f7a', car_parts: '#7a1f1f', cinema: '#5a2a6b', bank: '#2d4a5a', place_of_worship: '#5a5048', school: '#6b5a2a', library: '#3d4f6b' };
+function signTex(text, bg) { // auto-fit business sign
+  const ctx2 = document.createElement('canvas').getContext('2d'), font = (px) => `800 ${px}px Oswald, Impact, Arial Narrow, sans-serif`;
+  ctx2.font = font(96); const tw = ctx2.measureText(text).width, W2 = Math.max(400, Math.min(1400, Math.ceil(tw + 90))), c = document.createElement('canvas'); c.width = W2; c.height = 150;
+  const g = c.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, W2, 150); g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 8; g.strokeRect(8, 8, W2 - 16, 134);
+  g.fillStyle = '#fff'; g.font = font(Math.min(96, 96 * (W2 - 70) / tw)); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, W2 / 2, 80);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.userData.aspect = W2 / 150; return t;
+}
+async function loadTown() {
+  if (TOWN.ready) return; if (TOWN.loading) return TOWN.loading;
+  TOWN.loading = (async () => {
+    const [tm, raw, tv] = await Promise.all([fetch('assets/town/town.json').then((r) => r.json()), loadU16('assets/town/height.png'), fetch('assets/town/vectors.json').then((r) => r.json())]);
+    const T = TOWN; T.meta = tm; T.vec = tv; T.G = tm.grid; T.size = tm.size_m; T.x0 = tm.x0; T.z0 = tm.z0; T.x1 = tm.x0 + tm.size_m; T.z1 = tm.z0 + tm.size_m;
+    T.H = new Float32Array(T.G * T.G); const rr = tm.max_elev - tm.min_elev, off = tm.min_elev - BASE; for (let i = 0; i < raw.length; i++) T.H[i] = raw[i] / 65535 * rr + off;
+    T.ready = true; // heightAt() now answers for the town too
+    const grp = new THREE.Group(); scene.add(grp); T.group = grp;
+    const ter = new THREE.Mesh(gridGeometry(T.G, T.size, T.H, T.x0, T.z0), new THREE.MeshLambertMaterial({ map: loadTex('assets/town/aerial.jpg') })); ter.receiveShadow = true; grp.add(ter);
+    // push the coarse backdrop under the town
+    const bk = scene.userData.back; if (bk) { const p = bk.geometry.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); if (x > T.x0 - 60 && x < T.x1 + 60 && z > T.z0 - 60 && z < T.z1 + 60) p.setY(i, p.getY(i) - 30); } p.needsUpdate = true; }
+    // road grid
+    T.RN = Math.ceil(T.size / ROADGRID); T.roads = new Uint8Array(T.RN * T.RN);
+    for (const r of tv.roads) { const rad = r.w / 2 + 1; for (let k = 1; k < r.pts.length; k++) { const [ax, az] = r.pts[k - 1], [bx, bz] = r.pts[k], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 4));
+      for (let t = 0; t <= n; t++) { const x = ax + (bx - ax) * t / n, z = az + (bz - az) * t / n; for (let dz = -rad; dz <= rad; dz += 5) for (let dx = -rad; dx <= rad; dx += 5) { const i = Math.floor((x + dx - T.x0) / ROADGRID), j = Math.floor((z + dz - T.z0) / ROADGRID); if (i >= 0 && j >= 0 && i < T.RN && j < T.RN) T.roads[j * T.RN + i] = 2; } } } }
+    // streets + river
+    const po = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide };
+    grp.add(ribbon(tv.water.filter((w) => w.kind === 'river'), 0.4, new THREE.MeshPhongMaterial({ color: 0x3f6f86, specular: 0x9fc7dd, shininess: 60, transparent: true, opacity: 0.85, ...po }), 1));
+    grp.add(ribbon(tv.roads, 0.25, new THREE.MeshLambertMaterial({ color: 0x47474a, ...po })));
+    grp.add(ribbon(tv.roads.filter((r) => ['trunk', 'primary'].includes(r.kind)).map((r) => ({ ...r, w: 0.18 })), 0.3, new THREE.MeshBasicMaterial({ color: 0xd9b23a, ...po }), 2));
+    // buildings: real footprints, merged into one mesh with per-building colors
+    const pos = [], nrm = [], col = [], c = new THREE.Color(), rnd = mulberry32(1866);
+    const BRICK = [0x8a4a3a, 0x9a5a44, 0x7a5040, 0xa8705a, 0xb8a58a, 0xc9b99a, 0x8d8a84, 0x6f7a6a], HOUSE = [0xd8cfc0, 0xc9d3d6, 0xe3dcc8, 0xb7c4b0, 0xd9c7a8, 0xa9b8c4, 0xe8e2d4, 0xc4a98a], ROOF = [0x4a4e55, 0x5a4a40, 0x3e4248, 0x6a5a4a, 0x55606a];
+    for (const b of tv.buildings) {
+      if (b.pts.length < 3) continue;
+      let area2 = 0; for (let k = 0; k < b.pts.length; k++) { const p = b.pts[k], q = b.pts[(k + 1) % b.pts.length]; area2 += p[0] * q[1] - q[0] * p[1]; } area2 = Math.abs(area2 / 2);
+      const commercial = !!b.name || !['house', 'residential', 'detached', 'garage', 'shed', 'yes'].includes(b.kind) || area2 > 500;
+      const h = (parseFloat(b.h) || (parseInt(b.levels) || 0) * 3.6) || (commercial ? (area2 > 1500 ? 7.5 : 5.8) : b.kind === 'shed' || b.kind === 'garage' ? 3 : 4.6);
+      let geo; try { geo = new THREE.ExtrudeGeometry(new THREE.Shape(b.pts.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: h, bevelEnabled: false }); } catch { continue; }
+      geo.rotateX(-Math.PI / 2); const y0 = Math.min(...b.pts.map(([x, z]) => heightAt(x, z))) - 0.3; geo.translate(0, y0, 0);
+      const g2 = geo.index ? geo.toNonIndexed() : geo, P = g2.attributes.position, N2 = g2.attributes.normal, wall = new THREE.Color(pick(commercial ? BRICK : HOUSE)).offsetHSL(0, 0, (rnd() - 0.5) * 0.06), roof = new THREE.Color(pick(ROOF));
+      for (let i = 0; i < P.count; i++) { pos.push(P.getX(i), P.getY(i), P.getZ(i)); nrm.push(N2.getX(i), N2.getY(i), N2.getZ(i)); const top = N2.getY(i) > 0.7; c.copy(top ? roof : wall); if (!top && P.getY(i) > y0 + h * 0.35 && P.getY(i) < y0 + h * 0.75 && commercial) c.multiplyScalar(0.9); col.push(c.r, c.g, c.b); }
+      geo.dispose();
+    }
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); bg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const bm = new THREE.Mesh(bg, new THREE.MeshLambertMaterial({ vertexColors: true })); bm.castShadow = bm.receiveShadow = true; grp.add(bm);
+    // business signs (names from OpenStreetMap), gas station canopies
+    const seen = new Set();
+    for (const p of tv.places) {
+      const key = p.name + p.kind; if (seen.has(key) || p.kind === 'atm' || p.kind === 'charging_station') continue; seen.add(key);
+      const [x, z] = p.at; let best = null, bd = 1e9; for (const r of tv.roads) for (const q of r.pts) { const d = (q[0] - x) ** 2 + (q[1] - z) ** 2; if (d < bd) { bd = d; best = q; } }
+      const face = best ? Math.atan2(best[0] - x, best[1] - z) : 0, dd = Math.sqrt(bd), toward = Math.min(dd - 3, 9);
+      const sx = x + Math.sin(face) * toward, sz = z + Math.cos(face) * toward, pole = ['fuel', 'fast_food'].includes(p.kind), y = heightAt(sx, sz);
+      const label = p.name.length > 30 ? p.name.slice(0, 29) + '…' : p.name, tex = signTex(label, KIND_COL[p.kind] || '#3a3128'), wdt = Math.max(3, Math.min(8.5, 1.3 * tex.userData.aspect));
+      const sgm = new THREE.MeshBasicMaterial({ map: tex });
+      for (const flip of [0, Math.PI]) { const sg = new THREE.Mesh(new THREE.PlaneGeometry(wdt, 1.3), sgm); sg.position.set(sx, y + (pole ? 7 : 3.4), sz); sg.rotation.y = face + flip; grp.add(sg); }
+      grp.add(box(0.2, pole ? 7 : 3.4, 0.2, std(0x4a4a4a), sx - Math.cos(face) * wdt * 0.42, y + (pole ? 3.5 : 1.7), sz + Math.sin(face) * wdt * 0.42), box(0.2, pole ? 7 : 3.4, 0.2, std(0x4a4a4a), sx + Math.cos(face) * wdt * 0.42, y + (pole ? 3.5 : 1.7), sz - Math.sin(face) * wdt * 0.42));
+      if (p.kind === 'fuel') { const cx = x + Math.sin(face) * Math.max(0, dd - 16), cz = z + Math.cos(face) * Math.max(0, dd - 16), cy = heightAt(cx, cz), cg = new THREE.Group(); cg.position.set(cx, cy, cz); cg.rotation.y = face; grp.add(cg);
+        cg.add(box(9, 0.6, 14, std(0xeeeeea), 0, 5, 0), box(9.2, 0.35, 14.2, std(KIND_COL.fuel), 0, 4.6, 0)); for (const [a, b2] of [[-3.5, -5], [3.5, -5], [-3.5, 5], [3.5, 5]]) cg.add(box(0.35, 4.6, 0.35, std(0xd9d9d6), a, 2.3, b2)); for (const zz of [-3, 3]) cg.add(box(0.9, 1.7, 0.6, std(0xc9cbcd), 0, 0.85, zz)); }
+      if (!TOWN.labels) TOWN.labels = []; TOWN.labels.push({ name: p.name, kind: p.kind, x, z });
+    }
+    // entry/exit points on Hwy 28 for both areas
+    T.entry = pointInside(tv.roads, (r) => /28/.test(r.ref || r.name), T.x1, (x, z) => T.x1 - x, 260); T.exit = pointInside(tv.roads, (r) => /28/.test(r.ref || r.name), T.x1, (x, z) => T.x1 - x, 70);
+  })();
+  return TOWN.loading;
+}
+// a point on a road that is `inside` meters in from an edge (measure = distance from that edge), with the heading pointing inward
+function pointInside(roads, filter, _edge, measure, inside) {
+  let best = null, bd = 1e9;
+  for (const r of roads) { if (!filter(r)) continue; const P = r.pts; for (let k = 1; k < P.length - 1; k++) { const d = Math.abs(measure(P[k][0], P[k][1]) - inside); if (d < bd) { bd = d; best = { P, k }; } } }
+  if (!best) return null; const { P, k } = best, a = P[k - 1], b = P[k + 1];
+  let h = Math.atan2(b[0] - a[0], b[1] - a[1]); if (measure(b[0], b[1]) < measure(a[0], a[1])) h += Math.PI;
+  return { x: P[k][0], z: P[k][1], h };
+}
+const VEXIT = pointInside(vec.roads, (r) => /28/.test(r.name), -HALF, (x) => x + HALF, 110), VENTRY = pointInside(vec.roads, (r) => /28/.test(r.name), -HALF, (x) => x + HALF, 330);
+function setArea(a) {
+  area = a;
+  if (a === 'town') { AX0 = TOWN.x0 + 10; AX1 = TOWN.x1 - 10; AZ0 = TOWN.z0 + 10; AZ1 = TOWN.z1 - 10; } else { AX0 = -HALF + 10; AX1 = HALF - 10; AZ0 = -HALF + 10; AZ1 = HALF - 10; }
+  sage.visible = rocks.visible = grass.visible = a === 'valley'; lastChunk = '';
+  setMapFrame(a);
+}
+function moveRig(x, z, h, speed) { // move the current vehicle (with riders) or the player on foot
+  const v = player.inVehicle;
+  if (v) { v.pos.set(x, heightAt(x, z), z); v.heading = h; v.speed = speed; placeVehicle(v, 1); player.pos.copy(v.pos); }
+  else { player.pos.set(x, heightAt(x, z), z); player.yaw = h; }
+  placeCrewAround(player.pos.x, player.pos.z); camYaw = h + Math.PI; lastChunk = '';
+}
+let transBusy = false;
+async function goTown() {
+  if (transBusy) return; transBusy = true; const el = $('trans'); $('transBig').textContent = 'Heading into Salmon…'; $('transSmall').textContent = 'Highway 28 · about 9 miles up the Lemhi'; el.classList.add('on');
+  const sp = player.inVehicle ? Math.min(14, Math.abs(player.inVehicle.speed)) : 0;
+  await Promise.all([loadTown(), new Promise((r) => setTimeout(r, 900))]);
+  setArea('town'); const e = TOWN.entry; moveRig(e.x, e.z, e.h, sp);
+  setTimeout(() => { el.classList.remove('on'); transBusy = false; toast('Salmon', 'Downtown is up ahead. Grab a bite, fill up, look around.', 3.4);
+    setTimeout(() => (partyLine('dawg', ['Buddy\'s or Burger King? I\'m not picky. I\'m hungry.', 'Dave\'s Pizza. Final answer.'], 0)) || partyLine('skin', ['I know everybody in this town.'], 0) || crewLine('ride'), 2200); }, 500);
+}
+async function goValley() {
+  if (transBusy) return; transBusy = true; const el = $('trans'); $('transBig').textContent = 'Back to the valley…'; $('transSmall').textContent = 'Highway 28 south'; el.classList.add('on');
+  const sp = player.inVehicle ? Math.min(14, Math.abs(player.inVehicle.speed)) : 0;
+  await new Promise((r) => setTimeout(r, 900)); setArea('valley'); moveRig(VENTRY.x, VENTRY.z, VENTRY.h, sp);
+  setTimeout(() => { el.classList.remove('on'); transBusy = false; toast('The valley', 'Back on 28. Elk country is that way.', 2.8); }, 500);
+}
+function updateArea() {
+  if (transBusy || !player.inVehicle) return;
+  const v = player.inVehicle, fx2 = Math.sin(v.heading), fz2 = Math.cos(v.heading);
+  if (area === 'valley' && VEXIT && Math.hypot(v.pos.x - VEXIT.x, v.pos.z - VEXIT.z) < 45 && fx2 * Math.sin(VEXIT.h) + fz2 * Math.cos(VEXIT.h) < -0.2) goTown();
+  if (area === 'town' && TOWN.exit && Math.hypot(v.pos.x - TOWN.exit.x, v.pos.z - TOWN.exit.z) < 45 && fx2 * Math.sin(TOWN.exit.h) + fz2 * Math.cos(TOWN.exit.h) < -0.2) goValley();
+}
+// map frame follows the area
+const MF = { x0: -HALF, z0: -HALF, s: S }; window.__MF = MF;
+function setMapFrame(a) {
+  if (a === 'town') { MF.x0 = TOWN.x0; MF.z0 = TOWN.z0; MF.s = TOWN.size; $('mapbox').style.backgroundImage = 'url(assets/town/aerial.jpg)'; $('mapbox').querySelector('.cap').textContent = 'Downtown Salmon';
+    if (!TOWN.dots) { TOWN.dots = true; for (const L of TOWN.labels || []) if (['fuel', 'restaurant', 'fast_food', 'cafe', 'bakery', 'pub', 'bar', 'supermarket', 'doityourself', 'fishing', 'cinema'].includes(L.kind)) { const id = 'town_' + L.name; mapDot(id, KIND_COL[L.kind] || '#999', L.name); setDot(id, L.x, L.z); } } }
+  else { MF.x0 = -HALF; MF.z0 = -HALF; MF.s = S; $('mapbox').style.backgroundImage = ''; $('mapbox').querySelector('.cap').textContent = 'Salmon, ID'; }
+  for (const id in mapDots) if (mapDots[id].at) setDot(id, ...mapDots[id].at);
+}
+
 // ---------------------------------------------------------------- update loop
 const clock = new THREE.Clock();
 let todT = 0, bugleT = 25, banterT = 30, spotT = 1;
@@ -1540,8 +1671,8 @@ function updatePlayer(dt) {
   if (sprint) { if (!noDrain()) player.stamina -= (5 + (10 - st.stamina) * 3.2) * dt; }
   else player.stamina += (4 + st.stamina * 1.6) * (moving ? 0.6 : 1) * regenMul() * dt;
   player.stamina = clamp(player.stamina, 0, 100);
-  player.pos.x = clamp(player.pos.x + mx * spd * dt, -HALF + 10, HALF - 10);
-  player.pos.z = clamp(player.pos.z + mz * spd * dt, -HALF + 10, HALF - 10);
+  player.pos.x = clamp(player.pos.x + mx * spd * dt, AX0, AX1);
+  player.pos.z = clamp(player.pos.z + mz * spd * dt, AZ0, AZ1);
   const g = heightAt(player.pos.x, player.pos.z);
   if (keys.Space && player.onGround) { player.vy = 5.2; player.onGround = false; }
   player.vy -= 18 * dt; player.pos.y += player.vy * dt;
@@ -1572,7 +1703,7 @@ function updateVehicle(v, dt) {
   const nx = v.pos.x + Math.sin(v.heading) * v.speed * dt, nz = v.pos.z + Math.cos(v.heading) * v.speed * dt;
   const grade = (heightAt(nx, nz) - heightAt(v.pos.x, v.pos.z)) / Math.max(0.01, Math.hypot(nx - v.pos.x, nz - v.pos.z));
   if (grade > 0.85 && v.speed > 0) { v.speed *= 0.5; toastOnce('Too steep', 'Even Slime\'s gadgets can\'t climb that.'); }
-  else { v.pos.x = clamp(nx, -HALF + 10, HALF - 10); v.pos.z = clamp(nz, -HALF + 10, HALF - 10); }
+  else { v.pos.x = clamp(nx, AX0, AX1); v.pos.z = clamp(nz, AZ0, AZ1); }
   placeVehicle(v, Math.min(1, dt * 8));
   for (const w of v.wheels) { w.spin.rotation.x += v.speed * dt / v.wheelR; if (w.front) w.pivot.rotation.y = v.steer * 0.9; }
   emitDust(v, dt);
@@ -1680,7 +1811,7 @@ function updateHud(dt) {
 
 function frame() {
   const rdt = Math.min(clock.getDelta(), 0.05); slowT -= rdt; const dt = slowT > 0 ? rdt * 0.25 : (fx.calm > 0 && scoping) ? rdt * 0.55 : rdt;
-  if (started) { updatePowers(rdt, clock.elapsedTime); updateEncounters(dt); updateAmmo(rdt); updatePlayer(dt); updateAnimals(dt); updateHud(rdt); updateBanter(rdt); gameHour = Math.min(19, gameHour + rdt / 240); }
+  if (started) { updatePowers(rdt, clock.elapsedTime); updateEncounters(dt); updateAmmo(rdt); updateArea(); updatePlayer(dt); updateAnimals(dt); updateHud(rdt); updateBanter(rdt); gameHour = Math.min(19, gameHour + rdt / 240); }
   updateNpcs(dt); updateDust(dt); updatePuffs(rdt); if (hitT > 0) { hitT -= rdt; if (hitT <= 0) $('hitmark').className = ''; }
   todT -= rdt; if (todT < 0) { todT = 1; applyTimeOfDay(); }
   if (started) {
@@ -1735,4 +1866,4 @@ player.pos.y = heightAt(player.pos.x, player.pos.z);
 $('loading').classList.add('hidden');
 frame();
 // test hooks for automated playtesting
-window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, get nav() { return { on: navOn, path: navPath.length, chev: chevs.filter((c) => c.visible).length, first: chevs.slice(0, 3).map((c) => [c.position.x, c.position.y, c.position.z].map(Math.round)), p0: navPath.slice(0, 2), me: [player.pos.x, player.pos.y, player.pos.z].map(Math.round) }; }, chevs, scene, teleport, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
+window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, goTown, goValley, get area() { return area; }, TOWN, get nav() { return { on: navOn, path: navPath.length, chev: chevs.filter((c) => c.visible).length, first: chevs.slice(0, 3).map((c) => [c.position.x, c.position.y, c.position.z].map(Math.round)), p0: navPath.slice(0, 2), me: [player.pos.x, player.pos.y, player.pos.z].map(Math.round) }; }, chevs, scene, teleport, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };

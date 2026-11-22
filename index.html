@@ -190,6 +190,9 @@ body.touch #ammo{bottom:calc(150px + env(safe-area-inset-bottom,0px));right:max(
 body.touch #nav{top:calc(112px + env(safe-area-inset-top,0px));padding:4px 10px 4px 6px}body.touch #navArrow,body.touch #navArrow svg{width:32px;height:32px}body.touch #navText{font-size:15px}
 @media (max-width:560px){body.touch #nav{top:auto;bottom:calc(300px + env(safe-area-inset-bottom,0px))}}
 #mapRoute{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#trans{position:fixed;inset:0;z-index:23;display:grid;place-items:center;background:#0e0c0a;opacity:0;pointer-events:none;transition:opacity .45s;text-align:center}
+#trans.on{opacity:1;pointer-events:auto}#transBig{font-size:clamp(30px,6vw,56px);color:var(--accent)}#transSmall{color:var(--muted);font-size:14px;margin-top:6px}
+#map .box{background-size:cover;background-position:center}
 </style>
 <div id="loading"><div class="lw"><div>Loading the valley…</div><div class="lbar"><i id="loadbar"></i></div><div class="tip" id="tip">Tip: Skin runs out of breath in about 3 seconds. Plan accordingly.</div></div></div>
 
@@ -222,6 +225,7 @@ body.touch #nav{top:calc(112px + env(safe-area-inset-top,0px));padding:4px 10px 
       <button class="dest" data-dest="hq"><b>Crew HQ</b><span>Start at the house off Hwy 28</span></button>
       <button class="dest" data-dest="gate"><b>Eagle Valley gate</b><span>Skin knows a guy. In the truck, at the gate.</span></button>
       <button class="dest" data-dest="hunt"><b>Elk hunt</b><span>On a ridge, herd below. Ready to hunt.</span></button>
+      <button class="dest" data-dest="salmon"><b>Salmon Run</b><span>Drive into town. Real streets, real spots.</span></button>
       <button class="dest" data-dest="amish"><b>Amish store run</b><span>Dawg's mission. Get him to Baker before the pie sells out.</span></button>
       <button class="dest" data-dest="shortcut"><b>Skin's shortcut</b><span>Skin's mission. He swears it's faster.</span></button>
       <button class="dest" data-dest="cruise"><b>Highway 28 cruise</b><span>Already rolling. Just drive.</span></button>
@@ -229,6 +233,7 @@ body.touch #nav{top:calc(112px + env(safe-area-inset-top,0px));padding:4px 10px 
   </div>
 </div>
 <div id="howto" class="hidden"><div class="hbox"><h2>How to play</h2><div class="rot" id="howRot"></div><div class="hgrid" id="howGrid"></div><button class="go" id="howGo">Got it</button></div></div>
+<div id="trans"><div><div class="display" id="transBig"></div><div id="transSmall"></div></div></div>
 <div id="photo" class="hidden"><div class="pbox"><img id="photoImg" alt="Your RoadHunter photo"><div class="prow"><button class="go" id="photoShare">Share / Save</button><button class="ghost" id="photoClose">Close</button></div></div></div>
 <div id="hud" class="hidden">
   <div id="help">
