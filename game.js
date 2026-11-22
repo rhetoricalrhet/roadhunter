@@ -1101,6 +1101,25 @@ function drawAdvantage(dt) {
   const [nx, ny] = (() => { const a = Math.atan2(-sy, -cy); return [R + Math.sin(a) * (R - 14), R - Math.cos(a) * (R - 14)]; })();
   advG.fillStyle = '#f4ecdc'; advG.font = '700 22px Oswald, sans-serif'; advG.textAlign = 'center'; advG.textBaseline = 'middle'; advG.fillText('N', nx, ny);
 }
+
+// ---- first-time "how to play" (phone or computer version), reopen with the How to play button
+function showHowTo() {
+  const c = player.crew, T = touchMode, it = (ic, title, text, or) => `<div class="hi"><span class="ic ${or ? 'or' : ''}">${ic}</span><div><b>${title}</b>${text}</div></div>`;
+  $('howRot').textContent = T ? 'Best with your phone turned sideways.' : 'Click the game to look around with the mouse.';
+  $('howGrid').innerHTML = [
+    T ? it('Move', 'Move and look', 'Left thumb on the joystick to walk. Swipe anywhere with your right thumb to look.') : it('WASD', 'Move and look', 'WASD to walk, Shift to sprint, mouse to look. C crouches so animals don\'t spook.'),
+    T ? it('Shoot', 'Hunt', 'Tap Shoot once to open the scope, tap again to fire. Zoom changes power. Crouch to sneak.', 1) : it('RMB', 'Hunt', 'Hold right-click to scope, left-click to fire. Scroll to zoom. Bulls and bucks only.', 1),
+    it(T ? 'Power' : 'G', `Special ability: ${c.power}`, `${T ? 'The round button with the ring.' : 'Press G or click the round button.'} It glows when it\'s ready. Every hunter has a different one.`, 1),
+    it('Swap', 'Switch hunters', T ? 'Tap a crew face at the top, or your name card. Works anytime, even mid-mission.' : 'Press 1 to 6 or click a crew face. Works anytime, even mid-mission.'),
+    it('Radar', 'The Advantage', 'The radar in the corner. Dots are animals; the big ones are bulls and bucks. Yellow is your target.'),
+    it('Zyn', 'Zyn tins', '12 glowing tins hidden around the map. Each one is a 60-second boost. Hewitt gets double.'),
+    it(T ? 'Talk' : 'E', 'Crew and missions', `${T ? 'Tap Talk' : 'Press E'} near the crew to chat or invite them. When Dawg or Skin "has a request," that starts a mission.`),
+    it(T ? 'Truck' : 'F', 'Drive and travel', `${T ? 'Tap Truck' : 'Press F'} near a vehicle; the crew hops in. Open the Map and tap a road to fast travel.`),
+  ].join('');
+  $('howto').classList.remove('hidden');
+}
+$('howGo').onclick = () => { $('howto').classList.add('hidden'); store.set('howto', 1); };
+$('helpBtn').onclick = (e) => { e.stopPropagation(); if (started) showHowTo(); };
 // effect multipliers used by the core loop
 const swayMul = () => (fx.calm > 0 ? 0 : 1) * (zyn && zyn.flavor === 'wintergreen' ? (player.crew.id === 'hewitt' ? 0.15 : 0.35) : 1) * (fx.burn > 0 ? 2.5 : 1);
 const speedMul = () => (zyn && zyn.flavor === 'coffee' ? 1.3 : 1) * (fx.wind > 0 ? 1.1 : 1);
@@ -1323,6 +1342,7 @@ function begin(dest) {
   DESTS[dest](); renderCrewBar();
   if (dest === 'hq') { say(player.crew.name, pick(player.crew.lines.select)); setTimeout(() => toast('Welcome to Salmon', touchMode ? 'Walk to the truck, tap Truck, and go find some animals.' : 'Grab the truck (F) and go find some animals.', 4), 2600); }
   idleBarkT = rand(30, 50);
+  if (!store.get('howto', 0)) setTimeout(showHowTo, 400);
 }
 $('trophiesBtn').onclick = () => { renderTrophyList(); $('trophyPanel').classList.toggle('hidden'); };
 // idle menu camera

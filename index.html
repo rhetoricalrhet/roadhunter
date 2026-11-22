@@ -163,6 +163,16 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
   body.touch #speed{right:auto;left:50%;transform:translateX(-50%);top:calc(104px + env(safe-area-inset-top,0px))}
   body.touch #toast{top:30%}body.touch #toast .display{font-size:30px}
 }
+#howto{position:fixed;inset:0;z-index:24;display:grid;place-items:center;background:rgba(10,8,6,.78);padding:12px;pointer-events:auto;overflow:auto}
+.hbox{width:min(640px,100%);background:#1b1712;border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:grid;gap:10px;max-height:100%;overflow:auto}
+.hbox h2{margin:0;font-size:26px;color:var(--accent)}.hbox .rot{color:var(--muted);font-size:13px;margin-top:-6px}
+.hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
+.hi{display:flex;gap:10px;align-items:flex-start;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;line-height:1.35;color:var(--muted)}
+.hi b{color:var(--text);display:block;font-size:13.5px}.hi .ic{flex:0 0 34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:2px solid var(--line);font:700 10px Oswald,sans-serif;color:var(--text);text-transform:uppercase}
+.hi .ic.or{background:var(--accent);color:#1b1309;border-color:var(--accent)}
+.hbox .go{justify-self:center;padding:12px 40px;position:sticky;bottom:0;box-shadow:0 -8px 16px #1b1712}
+#helpBtn{margin:6px 0 0 6px;pointer-events:auto;background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--muted);font:600 11px Inter,sans-serif;padding:3px 8px;cursor:pointer}
+@media (max-height:520px){.hbox{padding:10px 14px;gap:6px}.hbox h2{font-size:20px}.hi{padding:5px 8px;font-size:12px}.hi .ic{flex-basis:28px;height:28px}}
 </style>
 <div id="loading"><div class="lw"><div>Loading the valley…</div><div class="lbar"><i id="loadbar"></i></div><div class="tip" id="tip">Tip: Skin runs out of breath in about 3 seconds. Plan accordingly.</div></div></div>
 
@@ -201,6 +211,7 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
     </div>
   </div>
 </div>
+<div id="howto" class="hidden"><div class="hbox"><h2>How to play</h2><div class="rot" id="howRot"></div><div class="hgrid" id="howGrid"></div><button class="go" id="howGo">Got it</button></div></div>
 <div id="photo" class="hidden"><div class="pbox"><img id="photoImg" alt="Your RoadHunter photo"><div class="prow"><button class="go" id="photoShare">Share / Save</button><button class="ghost" id="photoClose">Close</button></div></div></div>
 <div id="hud" class="hidden">
   <div id="help">
@@ -208,7 +219,7 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
     <kbd>F</kbd> truck <kbd>R</kbd> recover <kbd>RMB</kbd> scope <kbd>LMB</kbd> shoot<br>
     <kbd>G</kbd> ability <kbd>1-6</kbd> / click a face: switch <kbd>E</kbd> talk / invite <kbd>M</kbd> map (tap to travel)<br><kbd>Wheel</kbd> scope zoom <kbd>P</kbd> photo <kbd>N</kbd> sound <kbd>H</kbd> hide
   </div>
-  <div id="topright"><div class="display" id="trophies">Tags: 0</div><div id="place"></div><button id="sndBtn">Sound on</button></div>
+  <div id="topright"><div class="display" id="trophies">Tags: 0</div><div id="place"></div><button id="sndBtn">Sound on</button><button id="helpBtn">How to play</button></div>
   <div id="crewbar"></div>
   <div id="leftcol"><div id="obj" class="hidden"></div><div id="buffs"></div></div>
   <button id="abil"><span class="ring"><b>G</b></span><span id="abilName">Ability</span> <kbd>G</kbd></button>
