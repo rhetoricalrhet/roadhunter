@@ -1309,12 +1309,11 @@ const ENCOUNTERS = {
         if (stage === 0) { m.position.x += wx * 1.3 * dt; m.position.z += wz * 1.3 * dt; m.rotation.y = Math.atan2(wx, wz); ch.play('Walk_Loop', 0.2);
           if (t > 2.5) { stage = 1; t = 0; ch.play('Idle_Talking_Loop', 0.3);
             voice('Outdoor girl', 'Morning! Any luck out here?', 0);
-            voice('', '<i>Hewitt is thinking about it.</i>', 2600);
-            partyLine('l', ['Hewitt. HEWITT. Say something.'], 5400);
-            voice('Hewitt', '…Yep.', 8000);
-            voice('Outdoor girl', 'Ha. Okay! Good luck, guys.', 10200);
-            partyLine('kyle', ['Smooth, man. Real smooth.'], 12600) || partyLine('skin', ['In my day we at least said hello.'], 12600) || partyLine('dawg', ['You could\'ve asked if she had snacks.'], 12600);
-            voice('Hewitt', '…I was thinking about it.', 15200); voice('Hewitt', '…She seemed nice.', 18400); } }
+            voice('', '<i>Hewitt thinks about it for a second.</i>', 2600);
+            voice('Hewitt', 'Not yet. Bulls were bugling up top at daylight, though. Take that draw and you\'ll hear them.', 4600, 4.4);
+            voice('Outdoor girl', 'Oh, nice! Thanks, that\'s really helpful. Good luck, guys!', 9400);
+            partyLine('l', ['Look at Hewitt go!', 'Okay, Hewitt! Smooth.'], 12400) || partyLine('kyle', ['Okay, Hewitt! Smooth.'], 12400) || partyLine('skin', ['That\'s how you do it, boys.'], 12400) || partyLine('dawg', ['Hewitt\'s the friendly one now?'], 12400);
+            voice('Hewitt', '…She seemed nice.', 15200); } }
         else if (stage === 1) { m.rotation.y = toP; if (t > 11) { stage = 2; ch.play('Walk_Loop', 0.3); } }
         else { m.position.x += wx * 1.3 * dt; m.position.z += wz * 1.3 * dt; m.rotation.y = Math.atan2(wx, wz); }
         m.position.y = heightAt(m.position.x, m.position.z); ch.mixer.update(dt);
