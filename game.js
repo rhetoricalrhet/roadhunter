@@ -436,7 +436,7 @@ function switchTo(id) {
 function renderCrewBar() {
   const el = $('crewbar'); if (!el) return;
   el.innerHTML = npcs.filter((n) => n.mode !== 'idle').map((n) => `<img src="assets/portraits/${n.crew.id}.jpg" alt="${n.crew.name}" title="Switch to ${n.crew.name}" data-id="${n.crew.id}">`).join('');
-  for (const im of el.children) im.onclick = (e) => { e.stopPropagation(); switchTo(im.dataset.id); };
+  for (const im of el.children) onTap(im, () => switchTo(im.dataset.id));
 }
 const SLOTS = [[-2.4, -0.6], [2.4, -0.6], [-3.6, -2.6], [3.6, -2.6], [-4.8, -0.2]]; // beside the hunter, out of the camera line
 const angLerp = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, t);
@@ -548,11 +548,16 @@ if (touchMode) {
   const run = $('tRun');
   run.addEventListener('pointerdown', () => { touchSprint = true; run.classList.add('on'); });
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) run.addEventListener(ev, () => { touchSprint = false; run.classList.remove('on'); });
-  $('who').addEventListener('click', () => { if (!started) return; const i = CREW.findIndex((c) => c.id === player.crew.id); switchTo(CREW[(i + 1) % CREW.length].id); });
+  onTap($('who'), () => { if (!started) return; const i = CREW.findIndex((c) => c.id === player.crew.id); switchTo(CREW[(i + 1) % CREW.length].id); });
 }
 $('map').addEventListener('click', () => $('map').classList.add('hidden'));
 $('photoClose').onclick = () => $('photo').classList.add('hidden');
-$('sndBtn').onclick = () => { audio.start(); $('sndBtn').textContent = audio.toggle() ? 'Sound on' : 'Sound off'; };
+// reliable taps on mobile Safari: act on touch/pointer release, ignore the duplicate click that may follow
+function onTap(el, fn) {
+  let last = 0; const go = (e) => { const now = performance.now(); if (now - last < 450) return; last = now; e.preventDefault(); e.stopPropagation(); fn(e); };
+  el.addEventListener('touchend', go, { passive: false }); el.addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch') go(e); }); el.addEventListener('click', go);
+}
+onTap($('sndBtn'), () => { audio.start(); $('sndBtn').textContent = audio.toggle() ? 'Sound on' : 'Sound off'; });
 addEventListener('pointerdown', () => audio.start());
 
 function setScope(on) {
@@ -998,9 +1003,9 @@ function pickGadget(g) {
   if (g === 'drone') { if (player.inVehicle) { toastOnce('Drone', 'Stop and get out to fly it.'); return; } fx.drone = 12; setScope(false); say('Slime', pick(['Drone\'s up. Don\'t tell the game warden.', 'Hold on, it\'s in the Xterra… got it.'])); }
   startCd();
 }
-for (const b of document.querySelectorAll('#gadgets [data-g]')) b.onclick = (e) => { e.stopPropagation(); pickGadget(b.dataset.g); };
+for (const b of document.querySelectorAll('#gadgets [data-g]')) onTap(b, () => pickGadget(b.dataset.g));
 $('gadgets').addEventListener('click', () => $('gadgets').classList.add('hidden'));
-$('abil').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); useAbility(); });
+onTap($('abil'), () => useAbility());
 let lockerCd = 0;
 function openLocker() {
   if (lockerCd > 0) { toastOnce('Gear locker', `Slime is reorganizing. ${Math.ceil(lockerCd)} s.`); return true; }
@@ -1144,8 +1149,8 @@ function showHowTo() {
   ].join('');
   $('howto').classList.remove('hidden');
 }
-$('howGo').onclick = () => { $('howto').classList.add('hidden'); store.set('howto', 1); };
-$('helpBtn').onclick = (e) => { e.stopPropagation(); if (started) showHowTo(); };
+onTap($('howGo'), () => { $('howto').classList.add('hidden'); store.set('howto', 1); });
+onTap($('helpBtn'), () => { if (started) showHowTo(); });
 // effect multipliers used by the core loop
 const swayMul = () => (fx.calm > 0 ? 0 : 1) * (zyn && zyn.flavor === 'wintergreen' ? (player.crew.id === 'hewitt' ? 0.15 : 0.35) : 1) * (fx.burn > 0 ? 2.5 : 1);
 const speedMul = () => (zyn && zyn.flavor === 'coffee' ? 1.3 : 1) * (fx.wind > 0 ? 1.1 : 1);

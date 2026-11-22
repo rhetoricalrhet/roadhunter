@@ -100,8 +100,8 @@ button.ghost{background:transparent;color:var(--text);border:1px solid var(--lin
 #photo{position:fixed;inset:0;z-index:25;display:grid;place-items:center;background:rgba(0,0,0,.8);padding:16px}
 .pbox{display:grid;gap:12px;max-width:min(900px,94vw)}.pbox img{max-width:100%;max-height:70vh;border-radius:10px;border:3px solid #f6eedf}.prow{display:flex;gap:10px;justify-content:center}
 #sndBtn{margin-top:6px;pointer-events:auto;background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--muted);font:600 11px Inter,sans-serif;padding:3px 8px;cursor:pointer}
-#topright{pointer-events:auto}
-#crewbar{position:absolute;left:16px;bottom:96px;display:flex;gap:6px}#crewbar{pointer-events:auto}#crewbar img{cursor:pointer;width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid rgba(246,238,223,.7)}
+#topright{pointer-events:auto;z-index:7}body.touch #sndBtn,body.touch #helpBtn{padding:8px 12px;font-size:12px;touch-action:manipulation}body.touch #howGo,body.touch #abil{touch-action:manipulation}
+#crewbar{position:absolute;left:16px;bottom:96px;display:flex;gap:6px}#crewbar{pointer-events:auto;z-index:7}body.touch #crewbar img{width:42px;height:42px;touch-action:manipulation}body.touch #who{touch-action:manipulation;z-index:7}#crewbar img{cursor:pointer;width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid rgba(246,238,223,.7)}
 body.touch #crewbar{left:50%;transform:translateX(-50%);bottom:auto;top:calc(62px + env(safe-area-inset-top,0px))}
 body.touch .tbtns{grid-template-columns:repeat(5,52px)}body.touch .tbtns button{width:52px;height:52px}body.touch .tbtns .big{grid-column:5;height:112px}
 @media (max-width:640px){#help{display:none}#topright{font-size:11px}}
@@ -150,7 +150,7 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
   body.touch #topright{right:10px;top:calc(10px + env(safe-area-inset-top,0px));font-size:10px}
   body.touch #topright .display{font-size:13px}
   body.touch #crewbar{left:10px;transform:none;top:calc(66px + env(safe-area-inset-top,0px))}
-  body.touch #leftcol{left:10px;top:calc(108px + env(safe-area-inset-top,0px));width:160px}
+  body.touch #leftcol{left:10px;top:calc(118px + env(safe-area-inset-top,0px));width:160px}
   body.touch #adv{top:calc(84px + env(safe-area-inset-top,0px));right:10px;width:100px;height:100px}
   body.touch #advLbl{top:calc(188px + env(safe-area-inset-top,0px));right:10px;width:100px}
   body.touch #who .rl{display:none}body.touch #stam{width:110px}
