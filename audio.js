@@ -114,6 +114,14 @@ export const audio = {
     src.connect(f).connect(g).connect(master); src.start(t, 0.5, 0.18);
     const o = ctx.createOscillator(), og = ctx.createGain(); o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); og.gain.setValueAtTime(v * 0.8, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.14); o.connect(og).connect(master); o.start(t); o.stop(t + 0.16);
   },
+  coyotes() { // a few rising yips and a howl, far off
+    if (!ctx || !this.on) return; const t0 = ctx.currentTime + 0.1, lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.connect(master);
+    for (let i = 0; i < 9; i++) { const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + i * 0.22 + Math.random() * 0.1, f = 700 + Math.random() * 500; o.type = 'triangle';
+      o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.5, t + 0.08); o.frequency.exponentialRampToValueAtTime(f * 0.8, t + 0.16);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.18); o.connect(g).connect(lp); o.start(t); o.stop(t + 0.2); }
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + 2.2; o.type = 'sine'; o.frequency.setValueAtTime(500, t); o.frequency.exponentialRampToValueAtTime(950, t + 0.6); o.frequency.linearRampToValueAtTime(900, t + 1.6); o.frequency.exponentialRampToValueAtTime(520, t + 2.2);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.3); g.gain.exponentialRampToValueAtTime(0.0005, t + 2.3); o.connect(g).connect(lp); o.start(t); o.stop(t + 2.4);
+  },
   door() {
     if (!ctx) return; const t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500; const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);

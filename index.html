@@ -179,6 +179,12 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
 #hitmark:before{transform:rotate(45deg)}#hitmark:after{transform:rotate(-45deg)}
 #hitmark.hit,#hitmark.kill,#hitmark.miss{animation:hm .7s ease-out forwards}#hitmark.hit{color:#fff}#hitmark.kill{color:#ff3b2f;width:60px;height:60px;margin:-30px}#hitmark.miss{color:rgba(255,255,255,.35);width:30px;height:30px;margin:-15px}
 @keyframes hm{0%{opacity:1;transform:scale(1.5)}25%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+#ammo{position:absolute;right:16px;bottom:16px;display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 10px;font:700 15px Oswald,sans-serif}
+#ammo i{width:7px;height:20px;border-radius:4px 4px 1px 1px;background:rgba(255,255,255,.15)}#ammo i.on{background:linear-gradient(#e8c66a 0 35%,#b8873a 35%)}
+#ammo b{margin-left:6px;color:var(--muted);font-weight:600}#ammo .rl{color:var(--accent);font-size:13px;letter-spacing:.05em;text-transform:uppercase}#ammo.low{border-color:var(--bad)}
+body.touch #ammo{bottom:calc(150px + env(safe-area-inset-bottom,0px));right:max(14px,env(safe-area-inset-right,0px));padding:5px 8px}
+@media (max-height:520px){body.touch #ammo{bottom:auto;top:calc(228px + env(safe-area-inset-top,0px))}}
+@media (max-width:560px){body.touch #ammo{bottom:calc(252px + env(safe-area-inset-bottom,0px))}}
 </style>
 <div id="loading"><div class="lw"><div>Loading the valley…</div><div class="lbar"><i id="loadbar"></i></div><div class="tip" id="tip">Tip: Skin runs out of breath in about 3 seconds. Plan accordingly.</div></div></div>
 
@@ -222,7 +228,7 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
 <div id="hud" class="hidden">
   <div id="help">
     <kbd>WASD</kbd> move <kbd>Shift</kbd> sprint <kbd>C</kbd> crouch<br>
-    <kbd>F</kbd> truck <kbd>R</kbd> recover <kbd>RMB</kbd> scope <kbd>LMB</kbd> shoot<br>
+    <kbd>F</kbd> truck <kbd>R</kbd> reload / recover <kbd>RMB</kbd> scope <kbd>LMB</kbd> shoot<br>
     <kbd>G</kbd> ability <kbd>1-6</kbd> / click a face: switch <kbd>E</kbd> talk / invite <kbd>M</kbd> map (tap to travel)<br><kbd>Wheel</kbd> scope zoom <kbd>P</kbd> photo <kbd>N</kbd> sound <kbd>H</kbd> hide
   </div>
   <div id="topright"><div class="display" id="trophies">Tags: 0</div><div id="place"></div><button id="sndBtn">Sound on</button><button id="helpBtn">How to play</button></div>
@@ -244,6 +250,7 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
   <div id="scope" class="hidden"></div>
   <div id="scopeinfo" class="hidden"></div>
   <div id="hitmark"></div>
+  <div id="ammo" class="hidden"></div>
   <div id="lock" class="hidden">Click to look around</div>
   <div id="touchui">
     <div id="stick"><div id="knob"></div></div>

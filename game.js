@@ -503,6 +503,7 @@ addEventListener('keydown', (e) => {
   if (!started) return;
   keys[e.code] = true;
   if (e.code === 'KeyF') toggleVehicle();
+  if (e.code === 'KeyR' && !player.inVehicle) startReload();
   if (e.code === 'KeyR' && player.inVehicle) { const v = player.inVehicle; v.speed = 0; v.pos.y += 2; if (has('hewitt')) { toast('Recovered', 'Hewitt fixed it. Of course he did.', 1.8); say('Hewitt', pick(['I could fix that. …Fixed.', 'Bent tie rod. Got it.'])); } else toast('Recovered', 'Back on four wheels.', 1.5); }
   if (e.code === 'KeyM') $('map').classList.toggle('hidden');
   if (e.code === 'KeyH') $('help').classList.toggle('hidden');
@@ -572,6 +573,7 @@ function boardVehicle(v) {
   const free = v.seats.filter((x) => !x.driver);
   for (const n of npcs) if (n.mode === 'follow' && n.model.position.distanceTo(v.pos) < 70 && free.length) { const seat = free.shift(); n.mode = 'ride'; n.vehicle = v; n.seat = seat; seatModel(n.model, v, seat); v.riders.push(n); }
   audio.door();
+  refillAmmo(v.name);
   const ts = tinSpots.find((q) => q.vehicle === v && !taken.has(q.id)); if (ts) { taken.add(ts.id); setTimeout(() => takeTin(ts), 1400); }
 }
 function unboardVehicle() {
@@ -642,14 +644,37 @@ function groundImpact(maxD = 1200) { // where the bullet hits the dirt
   for (let t = 4; t < maxD; t += 2) { const x = o.x + _v.x * t, y = o.y + _v.y * t, z = o.z + _v.z * t; if (y <= heightAt(x, z)) return { p: new THREE.Vector3(x, heightAt(x, z) + 0.3, z), d: t }; }
   return null;
 }
+// ---- ammo: 4-round magazine, bolt between shots, reload, more rounds in the truck
+const MAG = 4, RES = 16, ammo = { mag: MAG, res: RES, reloadT: 0, boltT: 0 };
+function startReload() {
+  if (ammo.reloadT > 0 || ammo.mag >= MAG) return;
+  if (ammo.res <= 0) { toastOnce('Out of ammo', 'Grab more shells from the truck.'); bark('miss'); return; }
+  ammo.reloadT = 2.2; audio.tone([300, 220], 0.05, 0.25, 'square', 0.05); setTimeout(() => audio.tone([260, 380], 0.04, 0.12, 'square', 0.06), 1700);
+}
+function refillAmmo(where) { if (ammo.res >= RES && ammo.mag >= MAG) return; ammo.res = RES; ammo.mag = MAG; ammo.reloadT = 0; toast('Ammo', `Grabbed a fresh box from ${where}.`, 2); }
+function updateAmmo(dt) {
+  ammo.boltT = Math.max(0, ammo.boltT - dt);
+  if (ammo.reloadT > 0) { ammo.reloadT -= dt; if (ammo.reloadT <= 0) { const take = Math.min(MAG - ammo.mag, ammo.res); ammo.mag += take; ammo.res -= take; } }
+  const el = $('ammo'); el.classList.toggle('hidden', !!player.inVehicle || !started);
+  const html = ammo.reloadT > 0 ? '<span class="rl">Reloading…</span>' : `${Array.from({ length: MAG }, (_, i) => `<i class="${i < ammo.mag ? 'on' : ''}"></i>`).join('')}<b>${ammo.res}</b>`;
+  if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; }
+  el.classList.toggle('low', ammo.mag === 0 && ammo.res === 0);
+}
+function canFire() {
+  if (ammo.reloadT > 0 || ammo.boltT > 0) return false;
+  if (ammo.mag <= 0) { startReload(); return false; }
+  return true;
+}
+function useRound() { ammo.mag--; ammo.boltT = 1.1; setTimeout(() => audio.tone([520, 380], 0.04, 0.08, 'square', 0.05), 550); if (ammo.mag === 0) setTimeout(startReload, 900); }
 function shoot() {
   if (!scoping || player.inVehicle) return;
+  if (!canFire()) return;
   const hit = animalUnderCrosshair(), aim = player.crew.stats.aim, maxRange = 150 + aim * 30 + rangeBonus();
   if (hit && !hit.a.male) {
     if (player.crew.id === 'kyle' && hit.a.kind === 'elk') return kyleWrongElk(hit);
     say(player.crew.name, "That's a " + (hit.a.kind === 'elk' ? 'cow' : 'doe') + '. Hold off, no tag for that.'); return;
   }
-  flashShot(); audio.shot();
+  flashShot(); audio.shot(); useRound();
   for (const a of animals) if (a.state !== 'down' && a.pos.distanceTo(player.pos) < 700) { a.state = 'flee'; a.t = rand(6, 10); a.fleeFrom = player.pos.clone(); }
   const inRange = hit && hit.d <= maxRange, kill = inRange && (hit.vital || hit.a.wounded), wound = inRange && !kill;
   if (hit && inRange) { // impact on the animal
@@ -657,7 +682,7 @@ function shoot() {
     hitMark(kill ? 'kill' : 'hit'); setTimeout(() => audio.thwack(hit.d), Math.min(1800, hit.d / 340 * 1000));
   } else { const g = groundImpact(); if (g) puffAt(g.p, 'dirt', g.d); }
   if (kill) {
-    const a = hit.a; a.state = 'down'; a.gone = 90; a.wounded = false;
+    const a = hit.a; a.state = 'down'; a.gone = 90; a.wounded = false; maybeBear(a); if (a.giant) setTimeout(() => toast('GIANT 7x7!', 'That one goes on the wall forever.', 4), 4300);
     const t = { kind: a.kind, points: a.points, dist: Math.round(hit.d), who: player.crew.name, when: Date.now() }; tags.push(t); store.set('tags', tags); updateTags();
     toast('Tagged!', `${label(a)} · ${t.dist} m · ${player.crew.name}`, 4);
     slowT = 1.6; drawTrophyBoard();
@@ -678,7 +703,7 @@ function shoot() {
   }
 }
 function kyleWrongElk(hit) { // the legend
-  const a = hit.a; flashShot(); audio.shot(); slowT = 1.6;
+  const a = hit.a; flashShot(); audio.shot(); useRound(); slowT = 1.6;
   for (const b of animals) if (b !== a && b.state !== 'down' && b.pos.distanceTo(player.pos) < 700) { b.state = 'flee'; b.t = rand(6, 10); b.fleeFrom = player.pos.clone(); }
   a.state = 'down'; a.gone = 120;
   tags.push({ kind: 'elk', points: 0, dist: Math.round(hit.d), who: 'Kyle', when: Date.now(), note: 'wrong elk' }); store.set('tags', tags); updateTags(); drawTrophyBoard();
@@ -1009,7 +1034,7 @@ onTap($('abil'), () => useAbility());
 let lockerCd = 0;
 function openLocker() {
   if (lockerCd > 0) { toastOnce('Gear locker', `Slime is reorganizing. ${Math.ceil(lockerCd)} s.`); return true; }
-  lockerCd = 120; ab.cd = 0; audio.door(); say('Slime', pick(['Backup for the backup. Here.', 'Batteries charged. Go.', 'Everything has a labeled bin.']));
+  lockerCd = 120; ab.cd = 0; ammo.res = RES; ammo.mag = MAG; audio.door(); say('Slime', pick(['Backup for the backup. Here.', 'Batteries charged. Go.', 'Everything has a labeled bin.']));
   toast('Gear locker', `${player.crew.power} is ready again.`, 2.5); return true;
 }
 
@@ -1124,7 +1149,7 @@ function drawAdvantage(dt) {
   for (const v of vehicles) if (v !== player.inVehicle) dot(v.pos.x, v.pos.z, v === truck ? '#c0473a' : '#f2f2ee', 6, true);
   for (const s of tinSpots) if (s.mesh && !taken.has(s.id) && Math.hypot(s.x - player.pos.x, s.z - player.pos.z) < RANGE) dot(s.x, s.z, FLAVORS[s.flavor].color, 5, false);
   for (const a of animals) { if (a.state === 'down') continue; const d = a.pos.distanceTo(player.pos); if (d > RANGE * 1.6) continue;
-    const col = a.kind === 'elk' ? (a.male ? '#ffb02a' : '#d9844a') : (a.male ? '#9fe070' : '#cfe7b8'); dot(a.pos.x, a.pos.z, a.wounded ? '#e0312a' : col, a.male ? 7 : 5, a.male); if (a.wounded) { const [wx, wy] = toMap(a.pos.x, a.pos.z); if (Math.hypot(wx - R, wy - R) < R - 12) { advG.strokeStyle = '#e0312a'; advG.lineWidth = 3; advG.beginPath(); advG.arc(wx, wy, 10 + (performance.now() / 120 % 8), 0, 7); advG.stroke(); } } }
+    const col = a.kind === 'elk' ? (a.male ? '#ffb02a' : '#d9844a') : (a.male ? '#9fe070' : '#cfe7b8'); dot(a.pos.x, a.pos.z, a.wounded ? '#e0312a' : a.giant ? '#ffd700' : col, a.giant ? 10 : a.male ? 7 : 5, a.male); if (a.wounded) { const [wx, wy] = toMap(a.pos.x, a.pos.z); if (Math.hypot(wx - R, wy - R) < R - 12) { advG.strokeStyle = '#e0312a'; advG.lineWidth = 3; advG.beginPath(); advG.arc(wx, wy, 10 + (performance.now() / 120 % 8), 0, 7); advG.stroke(); } } }
   if (waypoint) dot(waypoint.x, waypoint.z, '#ffd34d', 8, true);
   advG.restore();
   advG.fillStyle = '#3fa9f5'; advG.beginPath(); advG.moveTo(R, R - 13); advG.lineTo(R + 9, R + 9); advG.lineTo(R, R + 4); advG.lineTo(R - 9, R + 9); advG.closePath(); advG.fill(); advG.strokeStyle = '#fff'; advG.lineWidth = 2; advG.stroke();
@@ -1139,7 +1164,7 @@ function showHowTo() {
   $('howRot').textContent = T ? 'Best with your phone turned sideways.' : 'Click the game to look around with the mouse.';
   $('howGrid').innerHTML = [
     T ? it('Move', 'Move and look', 'Left thumb on the joystick to walk. Swipe anywhere with your right thumb to look.') : it('WASD', 'Move and look', 'WASD to walk, Shift to sprint, mouse to look. C crouches so animals don\'t spook.'),
-    T ? it('Shoot', 'Hunt', 'Tap Shoot once to open the scope, tap again to fire. Zoom changes power. Crouch to sneak.', 1) : it('RMB', 'Hunt', 'Hold right-click to scope, left-click to fire. Scroll to zoom. Bulls and bucks only.', 1),
+    T ? it('Shoot', 'Hunt', 'Tap Shoot once to open the scope, tap again to fire. 4 shots, then a reload; more ammo in the truck. Crouch to sneak.', 1) : it('RMB', 'Hunt', 'Hold right-click to scope, left-click to fire. 4 shots, R reloads, more ammo in the truck. Bulls and bucks only.', 1),
     it(T ? 'Power' : 'G', `Special ability: ${c.power}`, `${T ? 'The round button with the ring.' : 'Press G or click the round button.'} It glows when it\'s ready. Every hunter has a different one.`, 1),
     it('Swap', 'Switch hunters', T ? 'Tap a crew face at the top, or your name card. Works anytime, even mid-mission.' : 'Press 1 to 6 or click a crew face. Works anytime, even mid-mission.'),
     it('Radar', 'The Advantage', 'The radar in the corner. Dots are animals; the big ones are bulls and bucks. Yellow is your target.'),
@@ -1157,6 +1182,176 @@ const speedMul = () => (zyn && zyn.flavor === 'coffee' ? 1.3 : 1) * (fx.wind > 0
 const noDrain = () => fx.wind > 0 || (zyn && zyn.flavor === 'citrus');
 const regenMul = () => (fx.snack > 0 ? 2.5 : 1) * (zyn && zyn.flavor === 'citrus' ? 2 : 1);
 const rangeBonus = () => (fx.range > 0 ? 120 : 0);
+
+// ---------------------------------------------------------------- random encounters (play themselves; one every few minutes)
+const enc = { t: 100, active: null, last: '' };
+let stallT = 0, cowBlock = false;
+const ahead = (d, side = 0) => { const h = player.inVehicle ? player.inVehicle.heading : player.yaw, fx2 = Math.sin(h), fz2 = Math.cos(h); return { x: player.pos.x + fx2 * d + fz2 * side, z: player.pos.z + fz2 * d - fx2 * side, h }; };
+const voice = (who, text, at, dur = 3.4) => setTimeout(() => say(who, text, dur), at);
+const partyLine = (id, lines, at) => { if (has(id)) voice(CREW.find((c) => c.id === id).name, pick(lines), at); return has(id); };
+
+// NPC trucks (not drivable): a pickup with a driver that drives a straight line
+function npcTruck(color, look) {
+  const b = buildPickup(color), v = { mesh: b.group, pos: new THREE.Vector3(), heading: 0, speed: 0, wb: b.wb, half: b.half, wheels: b.wheels, wheelR: b.wheelR };
+  const d = buildCharacter(kit, look), seat = b.seats.find((s) => s.driver); d.root.position.set(seat.x, seat.y, seat.z); d.root.rotation.y = seat.face || 0; b.group.add(d.root); d.play('Driving_Loop', 0);
+  v.driver = d; scene.add(b.group); return v;
+}
+function moveTruck(v, dt) {
+  v.pos.x += Math.sin(v.heading) * v.speed * dt; v.pos.z += Math.cos(v.heading) * v.speed * dt;
+  placeVehicle(v, Math.min(1, dt * 8)); for (const w of v.wheels) w.spin.rotation.x += v.speed * dt / v.wheelR;
+  v.driver.mixer.update(dt);
+}
+const dropTruck = (v) => { scene.remove(v.mesh); };
+const MANAGER = { ...RANCHER, shirt: 0x5b6b4a, cap: 0x2e3b2a, brim: 0x2e3b2a, facialHair: 'mustache', hairColor: 0x6a5a48, facialColor: 0x6a5a48 };
+const OUTDOOR_GIRL = { bodyTex: 'T_Body_l.jpg', skinBoost: 1.18, hair: 'parted', hairColor: 0x8a5a2e, browColor: 0x6a4424, shirt: 0x6b7a4a, shirtFabric: 'knit', pants: 0xb0a083, shoes: 0x5a4632, sleeve: 0.95, collar: true, cap: 0x3b4a34, brim: 0x3b4a34, patch: 0xd9a35a };
+const GARY = { ...RANCHER, shirt: 0x2f4f7a, cap: 0xb33a2e, brim: 0xb33a2e, facialHair: 'goatee', belly: 0.06 };
+
+// black Angus: recolored procedural cow-elk
+function buildCow() {
+  const { mesh } = buildAnimal('elk', false), black = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.85 }), pink = new THREE.MeshStandardMaterial({ color: 0x3a2a26, roughness: 0.8 });
+  mesh.traverse((o) => { if (o.isMesh) o.material = o.material.color && o.material.color.getHex() === 0x1a1614 ? pink : black; }); mesh.scale.set(1.05, 0.92, 1.0); return mesh;
+}
+// black bear from primitives
+function buildBear() {
+  const fur = new THREE.MeshStandardMaterial({ color: 0x1f1813, roughness: 0.95 }), muz = new THREE.MeshStandardMaterial({ color: 0x6b5340, roughness: 0.9 });
+  const root = new THREE.Group(), body = new THREE.Group(); body.position.y = 0.72; root.add(body);
+  const add = (geo, mat, x, y, z, p = body) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; p.add(m); return m; };
+  const torso = add(new THREE.CapsuleGeometry(0.42, 0.75, 6, 12), fur, 0, 0, 0); torso.rotation.x = Math.PI / 2;
+  add(new THREE.SphereGeometry(0.44, 12, 10), fur, 0, 0.08, -0.42); // rump
+  const head = new THREE.Group(); head.position.set(0, 0.12, 0.78); body.add(head);
+  add(new THREE.SphereGeometry(0.27, 12, 10), fur, 0, 0, 0, head); add(new THREE.CylinderGeometry(0.09, 0.14, 0.24, 10), muz, 0, -0.05, 0.24, head).rotation.x = Math.PI / 2;
+  add(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshStandardMaterial({ color: 0x0b0a09 }), 0, -0.04, 0.37, head);
+  for (const s of [1, -1]) add(new THREE.SphereGeometry(0.08, 8, 6), fur, s * 0.18, 0.2, -0.04, head);
+  const legs = []; for (const [x, z] of [[0.24, 0.48], [-0.24, 0.48], [0.24, -0.45], [-0.24, -0.45]]) { const hip = new THREE.Group(); hip.position.set(x, -0.15, z); body.add(hip); const l = add(new THREE.CylinderGeometry(0.13, 0.11, 0.6, 8), fur, 0, -0.28, 0, hip); legs.push(hip); }
+  root.userData = { legs, head, phase: 0 }; return root;
+}
+function animBear(b, speed, dt) { const u = b.userData; u.phase += dt * speed * 3; u.legs.forEach((l, i) => { l.rotation.x = Math.sin(u.phase + (i % 3 === 0 ? 0 : Math.PI)) * Math.min(0.6, speed * 0.4); }); u.head.rotation.x = speed < 0.1 ? 0.5 : 0; }
+
+// --- the encounters
+const ENCOUNTERS = {
+  manager: { // ranch manager pulls up near Eagle Valley
+    ok: () => player.pos.x > 600 && player.pos.z < 1500,
+    start() {
+      const s = ahead(70, 6), v = npcTruck(0xd9d6cc, MANAGER); v.pos.set(s.x, heightAt(s.x, s.z), s.z); v.heading = s.h + Math.PI; v.speed = 8; placeVehicle(v, 1);
+      return { v, t: 0, stage: 0, tick(dt) {
+        const d = Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z);
+        if (this.stage === 0) { v.speed = d < 14 ? Math.max(0, v.speed - 12 * dt) : 8; if (v.speed === 0) { this.stage = 1; this.t = 0;
+          if (has('skin')) { voice('Ranch manager', 'Morning. You boys with Skin?', 0); voice('Skin', 'I know a guy.', 2600); voice('Ranch manager', 'Ha. Tell him hi. Bulls were up top at daylight.', 5000); }
+          else { voice('Ranch manager', 'Private ground, fellas. Stay on the road and close the gates behind you.', 0, 4); voice(player.crew.name, 'Yes sir.', 4200); partyLine('l', ['Hey, I think I know your cousin!'], 6600); } } }
+        else if (this.stage === 1) { this.t += dt; if (this.t > 8.5) { this.stage = 2; this.t = 0; } }
+        else { this.t += dt; if (this.t < 2.2) { v.speed = 4; v.heading += dt * Math.PI / 2.2; } else v.speed = Math.min(12, v.speed + 6 * dt); }
+        moveTruck(v, dt); return this.stage === 2 && d > 220;
+      }, end() { dropTruck(v); } };
+    },
+  },
+  gary: { // Skin knows the guy in the oncoming truck
+    ok: () => has('skin') && player.inVehicle && onRoad(player.pos.x, player.pos.z) && Math.abs(player.inVehicle.speed) > 5,
+    start() {
+      const s = ahead(160, -3.2), v = npcTruck(0x2f5d8a, GARY); v.pos.set(s.x, heightAt(s.x, s.z), s.z); v.heading = s.h + Math.PI; v.speed = 14; placeVehicle(v, 1);
+      let said = false;
+      return { v, tick(dt) { moveTruck(v, dt); const d = Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z);
+        if (!said && d < 45) { said = true; audio.tone([440, 440], 0.25, 0.08, 'square', 0.05); voice('Skin', 'Hey, that\'s Gary! GARY! How\'s your mom?', 0); voice('Gary', 'Skin! You still owe me a trailer hitch!', 2600); voice('Skin', 'I know a guy for that too.', 5200); partyLine('dawg', ['Does Skin know EVERYONE?'], 7800); }
+        return said && d > 250; }, end() { dropTruck(v); } };
+    },
+  },
+  flat: { // flat tire on a dirt road
+    ok: () => player.inVehicle && !onPaved(player.pos.x, player.pos.z) && Math.abs(player.inVehicle.speed) > 7,
+    start() {
+      const fix = has('hewitt') ? 5 : 11; stallT = fix + 1.5; audio.door(); setTimeout(() => audio.door(), 120);
+      toast('Flat tire!', has('hewitt') ? 'Hewitt\'s got it.' : 'Everybody out. This\'ll take a minute.', 3);
+      if (has('hewitt')) { voice('Hewitt', '…Yep. I\'ll get it.', 1200); voice('Hewitt', 'Done. Air it up at the store.', fix * 1000); }
+      else { voice(player.crew.name, 'Who checked the spare?', 1200); partyLine('skin', ['That\'s the wrong road. I TOLD you.'], 4200) || partyLine('dawg', ['Can we eat while we wait?'], 4200); voice(player.crew.name, 'Okay. We\'re good. Let\'s roll.', fix * 1000); }
+      return { tick() { return stallT <= 0; }, end() {} };
+    },
+  },
+  bull: { // giant bull, here for a minute
+    ok: () => !mission,
+    start() {
+      let built; do built = buildAnimal('elk', true); while (built.points < 7);
+      built.mesh.scale.setScalar(1.12);
+      let s; for (let k = 0; k < 12; k++) { s = ahead(rand(230, 340), rand(-140, 140)); if (Math.abs(s.x) < HALF - 200 && Math.abs(s.z) < HALF - 200 && classify(s.x, s.z) !== 'urban') break; }
+      const a = { kind: 'elk', male: true, points: 7, giant: true, mesh: built.mesh, pos: new THREE.Vector3(s.x, heightAt(s.x, s.z), s.z), heading: rand(0, 6.28), state: 'graze', t: 8, speed: 0, gone: 0 };
+      scene.add(a.mesh); animals.push(a); audio.bugle(300);
+      toast('GIANT BULL!', 'A 7x7 just showed up. It won\'t stay long. Check The Advantage.', 4);
+      partyLine('hewitt', ['…That\'s the biggest bull I\'ve ever seen.', 'Oh. Oh, that\'s a big one.'], 2200) || crewLine('spot');
+      let life = 65;
+      return { tick(dt) { if (a.state === 'down') return true; life -= dt; if (life < 0 && a.state !== 'flee') { a.state = 'flee'; a.t = 20; a.fleeFrom = player.pos.clone(); toastOnce('He\'s gone', 'The giant bull slipped over the ridge.'); }
+          return life < -12; }, end() { if (a.state !== 'down') { scene.remove(a.mesh); const i = animals.indexOf(a); if (i >= 0) animals.splice(i, 1); } } };
+    },
+  },
+  cows: { // cattle on the road
+    ok: () => player.inVehicle && onRoad(player.pos.x, player.pos.z) && Math.abs(player.inVehicle.speed) > 6,
+    start() {
+      const s = ahead(55), cows = [];
+      for (let i = 0; i < 7; i++) { const m = buildCow(), side = rand(-14, -4); const x = s.x + Math.cos(s.h) * side + Math.sin(s.h) * rand(-6, 6), z = s.z - Math.sin(s.h) * side + Math.cos(s.h) * rand(-6, 6);
+        m.position.set(x, heightAt(x, z), z); scene.add(m); cows.push({ m, h: s.h + Math.PI / 2 + rand(-0.3, 0.3), sp: rand(0.8, 1.3) }); }
+      partyLine('dawg', ['Burgers. Walking burgers.', 'I\'m not saying stop. I\'m saying… lunch.'], 1500) || voice(player.crew.name, 'Cows. Of course.', 1500);
+      partyLine('skin', ['Just ease through. They\'ll move.'], 4500);
+      let t = 0;
+      return { tick(dt) { t += dt; cowBlock = false;
+        for (const c of cows) { c.m.position.x += Math.sin(c.h) * c.sp * dt; c.m.position.z += Math.cos(c.h) * c.sp * dt; c.m.position.y = heightAt(c.m.position.x, c.m.position.z); c.m.rotation.y = c.h; animateAnimal(c.m, c.sp, 'walk', dt);
+          if (c.m.position.distanceTo(player.pos) < 22) cowBlock = true; }
+        return t > 34; }, end() { cowBlock = false; for (const c of cows) scene.remove(c.m); } };
+    },
+  },
+  girl: { // an outdoor girl says hi; Hewitt thinks about his answer for a long time
+    ok: () => has('hewitt') && !player.inVehicle,
+    start() {
+      const ch = buildCharacter(kit, OUTDOOR_GIRL), m = ch.root; m.scale.set(0.86, 0.95, 0.84);
+      const hi = ch.skeleton.bones.findIndex((b) => b.name === 'Head');
+      if (hi >= 0) { const hair = new THREE.MeshStandardMaterial({ color: 0x8a5a2e, roughness: 0.7 }), pony = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.26, 4, 8), hair); pony.position.set(0, 1.56, -0.13); pony.rotation.x = 0.35;
+        const holder = new THREE.Group(); holder.add(pony); holder.applyMatrix4(ch.skeleton.boneInverses[hi]); ch.skeleton.bones[hi].add(holder); }
+      const s = ahead(11, -8); m.position.set(s.x, heightAt(s.x, s.z), s.z); scene.add(m);
+      const wx = Math.cos(s.h), wz = -Math.sin(s.h); let t = 0, stage = 0;
+      const H = player.crew.id === 'hewitt' ? 'Hewitt' : 'Hewitt';
+      return { tick(dt) { t += dt;
+        const toP = Math.atan2(player.pos.x - m.position.x, player.pos.z - m.position.z);
+        if (stage === 0) { m.position.x += wx * 1.3 * dt; m.position.z += wz * 1.3 * dt; m.rotation.y = Math.atan2(wx, wz); ch.play('Walk_Loop', 0.2);
+          if (t > 2.5) { stage = 1; t = 0; ch.play('Idle_Talking_Loop', 0.3);
+            voice('Outdoor girl', 'Morning! Any luck out here?', 0);
+            voice('', '<i>Hewitt is thinking about it.</i>', 2600);
+            partyLine('l', ['Hewitt. HEWITT. Say something.'], 5400);
+            voice('Hewitt', '…Yep.', 8000);
+            voice('Outdoor girl', 'Ha. Okay! Good luck, guys.', 10200);
+            partyLine('kyle', ['Smooth, man. Real smooth.'], 12600) || partyLine('skin', ['In my day we at least said hello.'], 12600) || partyLine('dawg', ['You could\'ve asked if she had snacks.'], 12600);
+            voice('Hewitt', '…I was thinking about it.', 15200); voice('Hewitt', '…She seemed nice.', 18400); } }
+        else if (stage === 1) { m.rotation.y = toP; if (t > 11) { stage = 2; ch.play('Walk_Loop', 0.3); } }
+        else { m.position.x += wx * 1.3 * dt; m.position.z += wz * 1.3 * dt; m.rotation.y = Math.atan2(wx, wz); }
+        m.position.y = heightAt(m.position.x, m.position.z); ch.mixer.update(dt);
+        return stage === 2 && t > 34; }, end() { scene.remove(m); } };
+    },
+  },
+  coyotes: { // just sound and a reaction
+    ok: () => !player.inVehicle,
+    start() { audio.coyotes(); voice('', '<i>Coyotes start yipping somewhere down the draw.</i>', 400);
+      partyLine('skin', ['Coyotes. That\'ll push the elk.'], 3600) || partyLine('l', ['Sounds like a party down there.'], 3600) || voice(player.crew.name, 'Coyotes. Great.', 3600);
+      let t = 0; return { tick(dt) { return (t += dt) > 6; }, end() {} }; },
+  },
+};
+// bear: triggered after a kill (not random)
+function maybeBear(a) {
+  if (enc.active || Math.random() > 0.4) return;
+  setTimeout(() => {
+    if (enc.active) return; const b = buildBear(), ang = rand(0, 6.28), x = a.pos.x + Math.sin(ang) * 70, z = a.pos.z + Math.cos(ang) * 70; b.position.set(x, heightAt(x, z), z); scene.add(b);
+    toast('Bear!', 'A black bear smelled your elk. Give him a minute.', 3.4);
+    partyLine('skin', ['Nope. We\'re leaving.', 'I\'m getting in the truck.'], 1400); partyLine('dawg', ['That\'s OUR meat, bear!'], 3800); partyLine('hewitt', ['Give him room. He\'ll move on.'], 6200);
+    let t = 0, phase = 0; const target = a.pos.clone();
+    enc.active = { name: 'bear', tick(dt) { t += dt; const d = Math.hypot(target.x - b.position.x, target.z - b.position.z);
+      if (phase === 0) { if (d > 4) { const h = Math.atan2(target.x - b.position.x, target.z - b.position.z); b.rotation.y = h; b.position.x += Math.sin(h) * 1.6 * dt; b.position.z += Math.cos(h) * 1.6 * dt; animBear(b, 1.6, dt); } else { phase = 1; t = 0; } }
+      else if (phase === 1) { animBear(b, 0, dt); if (t > 12) { phase = 2; b.rotation.y += Math.PI; voice(player.crew.name, 'And he\'s… leaving. Okay.', 0); } }
+      else { b.position.x += Math.sin(b.rotation.y) * 2.2 * dt; b.position.z += Math.cos(b.rotation.y) * 2.2 * dt; animBear(b, 2.2, dt); if (t > 20) return true; }
+      b.position.y = heightAt(b.position.x, b.position.z); return false; }, end() { scene.remove(b); } };
+  }, 9000);
+}
+function updateEncounters(dt) {
+  stallT = Math.max(0, stallT - dt);
+  if (enc.active) { if (enc.active.tick(dt)) { enc.active.end(); enc.active = null; enc.t = rand(150, 230); } return; }
+  enc.t -= dt; if (enc.t > 0 || scoping || kidsRing > 0 || fx.drone > 0) return;
+  const pool = Object.keys(ENCOUNTERS).filter((k) => k !== enc.last && ENCOUNTERS[k].ok());
+  if (!pool.length) { enc.t = 15; return; }
+  const k = pick(pool); enc.last = k; enc.active = ENCOUNTERS[k].start(); enc.active.name = k;
+}
+function forceEncounter(k) { if (enc.active) { enc.active.end(); enc.active = null; } enc.last = k; enc.active = ENCOUNTERS[k].start(); enc.active.name = k; }
 
 // ---------------------------------------------------------------- update loop
 const clock = new THREE.Clock();
@@ -1207,6 +1402,8 @@ function updatePlayer(dt) {
 }
 function updateVehicle(v, dt) {
   const thr = clamp((keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) - stick.y, -1, 1), st = clamp((keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0) - stick.x, -1, 1);
+  if (stallT > 0) { v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 14 * dt); placeVehicle(v, Math.min(1, dt * 8)); player.pos.copy(v.pos); $('speed').innerHTML = `0<small>mph</small>`; return; }
+  if (cowBlock && v.speed > 3) v.speed = lerp(v.speed, 3, Math.min(1, dt * 3));
   if (thr > 0.1) v.speed += (v.speed < 0 ? 14 : 8.5) * thr * dt;
   else if (thr < -0.1) v.speed -= (v.speed > 0.5 ? 16 : 5) * -thr * dt;
   else v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 3.5 * dt);
@@ -1315,6 +1512,7 @@ function updateHud(dt) {
     const h = animalUnderCrosshair();
     const max = 150 + player.crew.stats.aim * 30;
     const max2 = max + rangeBonus();
+    if (!h && ammo.mag === 0) { $('scopeinfo').textContent = ammo.reloadT > 0 ? 'Reloading…' : ammo.res > 0 ? 'Empty. Tap Shoot to reload.' : 'Out of ammo. Get more from the truck.'; } else
     if (fx.range > 0 && h) { const yd = Math.round(h.d * 1.094), drop = Math.max(0, Math.round(((h.d * 1.094 - 200) / 100) ** 2 * 3.2)); $('scopeinfo').textContent = `${label(h.a)} · ${yd} yd · drop ${drop}" · hold ${drop > 10 ? 'high' : 'center'}${!h.a.male ? ' · no tag' : h.d > max2 ? ' · out of range' : ''}`; } else
     $('scopeinfo').textContent = h ? `${label(h.a)} · ${Math.round(h.d)} m · ${h.a.state === 'flee' ? 'running' : h.a.state === 'alert' ? 'alert' : 'unaware'}${!h.a.male ? ' · no tag' : h.d > max2 ? ' · out of range' : ''}` : `Effective range for ${player.crew.name}: ${max2} m · Left-click to shoot`;
   }
@@ -1328,7 +1526,7 @@ function updateHud(dt) {
 
 function frame() {
   const rdt = Math.min(clock.getDelta(), 0.05); slowT -= rdt; const dt = slowT > 0 ? rdt * 0.25 : (fx.calm > 0 && scoping) ? rdt * 0.55 : rdt;
-  if (started) { updatePowers(rdt, clock.elapsedTime); updatePlayer(dt); updateAnimals(dt); updateHud(rdt); updateBanter(rdt); gameHour = Math.min(19, gameHour + rdt / 240); }
+  if (started) { updatePowers(rdt, clock.elapsedTime); updateEncounters(dt); updateAmmo(rdt); updatePlayer(dt); updateAnimals(dt); updateHud(rdt); updateBanter(rdt); gameHour = Math.min(19, gameHour + rdt / 240); }
   updateNpcs(dt); updateDust(dt); updatePuffs(rdt); if (hitT > 0) { hitT -= rdt; if (hitT <= 0) $('hitmark').className = ''; }
   todT -= rdt; if (todT < 0) { todT = 1; applyTimeOfDay(); }
   if (started) {
@@ -1383,4 +1581,4 @@ player.pos.y = heightAt(player.pos.x, player.pos.z);
 $('loading').classList.add('hidden');
 frame();
 // test hooks for automated playtesting
-window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
+window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
