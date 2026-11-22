@@ -84,6 +84,26 @@ label.opt{color:var(--muted);font-size:13px;display:flex;gap:6px;align-items:cen
 #help{position:absolute;left:16px;top:16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--muted);line-height:1.8}
 #lock{position:absolute;left:50%;top:18%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 18px;font-size:14px}
 #loading{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:var(--bg);font:700 28px Oswald;letter-spacing:.1em;text-transform:uppercase}
+#loading .lw{display:grid;gap:14px;justify-items:center;width:min(420px,86vw)}
+.lbar{width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}.lbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+#loading .tip{font:400 13px Inter,sans-serif;letter-spacing:0;text-transform:none;color:var(--muted);text-align:center}
+button.ghost{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:13px 20px;font:600 15px Inter,sans-serif;cursor:pointer}
+#trophyPanel{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;max-width:560px}
+#trophyPanel h2{margin:0 0 6px;font-size:20px;color:var(--accent)}#trophyList{margin:0;padding-left:18px;color:var(--muted);font-size:14px;line-height:1.8}#trophyList b{color:var(--text)}
+#where{position:fixed;inset:0;z-index:21;overflow:auto;background:linear-gradient(180deg,rgba(18,14,10,.7),rgba(18,14,10,.95)),url(assets/aerial.jpg) center/cover}
+#where .wrap{max-width:900px;margin:0 auto;padding:28px 16px 40px}#where h2{font-size:26px;margin:14px 0 10px}
+#comes{display:flex;gap:10px;flex-wrap:wrap}.pick{display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:8px 10px;color:var(--muted);font:600 12px Inter,sans-serif;cursor:pointer}
+.pick img{width:52px;height:52px;border-radius:50%;object-fit:cover;opacity:.55}.pick.on{border-color:var(--accent);color:var(--text)}.pick.on img{opacity:1}
+.dests{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.dest{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;color:var(--text);cursor:pointer;display:grid;gap:4px}
+.dest b{font:700 20px Oswald,sans-serif;text-transform:uppercase;letter-spacing:.04em}.dest span{color:var(--muted);font-size:13px}.dest:hover{border-color:var(--accent)}
+#photo{position:fixed;inset:0;z-index:25;display:grid;place-items:center;background:rgba(0,0,0,.8);padding:16px}
+.pbox{display:grid;gap:12px;max-width:min(900px,94vw)}.pbox img{max-width:100%;max-height:70vh;border-radius:10px;border:3px solid #f6eedf}.prow{display:flex;gap:10px;justify-content:center}
+#sndBtn{margin-top:6px;pointer-events:auto;background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--muted);font:600 11px Inter,sans-serif;padding:3px 8px;cursor:pointer}
+#topright{pointer-events:auto}
+#crewbar{position:absolute;left:16px;bottom:96px;display:flex;gap:6px}#crewbar img{width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid rgba(246,238,223,.7)}
+body.touch #crewbar{left:50%;transform:translateX(-50%);bottom:auto;top:calc(62px + env(safe-area-inset-top,0px))}
+body.touch .tbtns{grid-template-columns:repeat(5,52px)}body.touch .tbtns button{width:52px;height:52px}body.touch .tbtns .big{grid-column:5;height:112px}
 @media (max-width:640px){#help{display:none}#topright{font-size:11px}}
 html,body{touch-action:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
 #touchui{display:none}
@@ -103,7 +123,7 @@ body.touch #prompt{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 body.touch #sub{bottom:calc(190px + env(safe-area-inset-bottom,0px));font-size:16px}
 body.touch #topright{padding:5px 9px}
 </style>
-<div id="loading">Loading the valley…</div>
+<div id="loading"><div class="lw"><div>Loading the valley…</div><div class="lbar"><i id="loadbar"></i></div><div class="tip" id="tip">Tip: Skin runs out of breath in about 3 seconds. Plan accordingly.</div></div></div>
 
 <div id="menu">
   <div class="wrap">
@@ -112,7 +132,9 @@ body.touch #topright{padding:5px 9px}
     <div class="grid" id="cards"></div>
     <div class="row">
       <button class="go" id="start">Hit the road</button>
+      <button class="ghost" id="trophiesBtn">Trophy wall</button>
     </div>
+    <div id="trophyPanel" class="hidden"><h2>Trophy wall</h2><ul id="trophyList"></ul></div>
     <div class="row keys">
       <div><kbd>W A S D</kbd> move · <kbd>Mouse</kbd> look · <kbd>Shift</kbd> sprint · <kbd>C</kbd> crouch · <kbd>Space</kbd> jump</div>
       <div><kbd>F</kbd> get in / out of truck · <kbd>R</kbd> flip truck back over · <kbd>Right-click</kbd> scope · <kbd>Left-click</kbd> take the shot</div>
@@ -123,13 +145,28 @@ body.touch #topright{padding:5px 9px}
   </div>
 </div>
 
+<div id="where" class="hidden">
+  <div class="wrap">
+    <h2>Who's coming?</h2>
+    <div id="comes"></div>
+    <h2>Where to?</h2>
+    <div class="dests">
+      <button class="dest" data-dest="hq"><b>Crew HQ</b><span>Start at the house off Hwy 28</span></button>
+      <button class="dest" data-dest="gate"><b>Eagle Valley gate</b><span>Skin knows a guy. In the truck, at the gate.</span></button>
+      <button class="dest" data-dest="hunt"><b>Elk hunt</b><span>On a ridge, herd below. Ready to hunt.</span></button>
+      <button class="dest" data-dest="cruise"><b>Highway 28 cruise</b><span>Already rolling. Just drive.</span></button>
+    </div>
+  </div>
+</div>
+<div id="photo" class="hidden"><div class="pbox"><img id="photoImg" alt="Your RoadHunter photo"><div class="prow"><button class="go" id="photoShare">Share / Save</button><button class="ghost" id="photoClose">Close</button></div></div></div>
 <div id="hud" class="hidden">
   <div id="help">
     <kbd>WASD</kbd> move <kbd>Shift</kbd> sprint <kbd>C</kbd> crouch<br>
     <kbd>F</kbd> truck <kbd>R</kbd> recover <kbd>RMB</kbd> scope <kbd>LMB</kbd> shoot<br>
-    <kbd>1-6</kbd> switch <kbd>E</kbd> talk <kbd>M</kbd> map <kbd>H</kbd> hide
+    <kbd>1-6</kbd> switch <kbd>E</kbd> talk / invite <kbd>M</kbd> map (tap to travel)<br><kbd>Wheel</kbd> scope zoom <kbd>P</kbd> photo <kbd>N</kbd> sound <kbd>H</kbd> hide
   </div>
-  <div id="topright"><div class="display" id="trophies">Tags: 0</div><div id="place"></div></div>
+  <div id="topright"><div class="display" id="trophies">Tags: 0</div><div id="place"></div><button id="sndBtn">Sound on</button></div>
+  <div id="crewbar"></div>
   <div id="who"><img id="whoImg" alt=""><div><div class="nm" id="whoName"></div><div class="rl" id="whoRole"></div><div id="stam"><i></i></div></div></div>
   <div id="speed" class="hidden">0<small>mph</small></div>
   <div id="prompt" class="hidden"></div>
@@ -144,6 +181,7 @@ body.touch #topright{padding:5px 9px}
     <div class="tbtns">
       <button id="tMap">Map</button><button id="tTalk">Talk</button><button id="tTruck">Truck</button>
       <button id="tCrouch">Crouch</button><button id="tRun">Sprint</button><button id="tScope">Scope</button>
+      <button id="tZoom">Zoom</button><button id="tPhoto">Photo</button>
       <button id="tShoot" class="big">Shoot</button>
     </div>
   </div>

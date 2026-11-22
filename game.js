@@ -2,6 +2,10 @@
 import * as THREE from 'three';
 import { CREW } from './crew.js';
 import { loadKit, buildCharacter, LOOKS } from './chars.js';
+import { buildPickup, buildXterra } from './vehicles.js';
+import { buildAnimal, animateAnimal } from './animals.js';
+import { audio } from './audio.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -21,14 +25,16 @@ async function loadU16(url) {
   for (let i = 0; i < out.length; i++) out[i] = d[i * 4] * 256 + d[i * 4 + 1];
   return out;
 }
+let loadedN = 0; const LOAD_N = 7;
+const track = (p) => p.then((v) => { loadedN++; const el = document.getElementById('loadbar'); if (el) el.style.width = Math.round(loadedN / LOAD_N * 100) + '%'; return v; });
 const [meta, rawH, bmeta, rawB, aerialImg, kit, vec] = await Promise.all([
-  fetch('assets/terrain.json').then((r) => r.json()),
-  loadU16('assets/height.png'),
-  fetch('assets/backdrop.json').then((r) => r.json()),
-  loadU16('assets/backdrop.png'),
-  new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = 'assets/aerial.jpg'; }),
-  loadKit(),
-  fetch('assets/vectors.json').then((r) => r.json()),
+  track(fetch('assets/terrain.json').then((r) => r.json())),
+  track(loadU16('assets/height.png')),
+  track(fetch('assets/backdrop.json').then((r) => r.json())),
+  track(loadU16('assets/backdrop.png')),
+  track(new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = 'assets/aerial.jpg'; })),
+  track(loadKit()),
+  track(fetch('assets/vectors.json').then((r) => r.json())),
 ]).catch((err) => { document.getElementById('loading').textContent = "Couldn't load: " + (err && err.message || err); throw err; });
 const G = meta.grid, S = meta.size_m, HALF = S / 2, BASE = meta.min_elev;
 const H = new Float32Array(G * G);
@@ -75,7 +81,8 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
   const sky = new THREE.Mesh(new THREE.SphereGeometry(70000, 32, 16), m); sky.renderOrder = -1; scene.add(sky);
   scene.userData.sky = sky;
 }
-scene.add(new THREE.HemisphereLight(0xe3ecf7, 0x8c7a5a, 0.95));
+const hemi = new THREE.HemisphereLight(0xe3ecf7, 0x8c7a5a, 0.95); scene.add(hemi);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.35; // paint/glass reflections
 const sun = new THREE.DirectionalLight(0xfff0d8, 1.7);
 sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 400 });
@@ -83,6 +90,18 @@ sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
 const fill = new THREE.DirectionalLight(0xfff6ec, 0.8); scene.add(fill, fill.target); // camera-side fill so faces read
 const SUN_DIR = new THREE.Vector3(-0.45, 0.75, 0.35).normalize();
+// ---- time of day: hunting starts at sunrise; 1 game hour = 4 real minutes
+let gameHour = 6.4;
+const C = (h) => new THREE.Color(h);
+const TOD = { sunDay: C(0xfff0d8), sunLow: C(0xffa860), topDay: C(0x4f86c6), topLow: C(0x5b78b0), horDay: C(0xcfdbe6), horLow: C(0xf3c69c) };
+function applyTimeOfDay() {
+  const t = clamp((gameHour - 5.8) / 13, 0, 1), el = Math.sin(t * Math.PI) * 1.05 + 0.04, az = Math.PI / 2 + t * Math.PI; // east -> south -> west
+  SUN_DIR.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+  const w = 1 - clamp(el / 0.45, 0, 1); // 1 = golden hour
+  sun.color.copy(TOD.sunDay).lerp(TOD.sunLow, w); sun.intensity = lerp(1.75, 1.25, w); hemi.intensity = lerp(0.95, 0.82, w);
+  const sky = scene.userData.sky.material.uniforms; sky.top.value.copy(TOD.topDay).lerp(TOD.topLow, w); HORIZON.copy(TOD.horDay).lerp(TOD.horLow, w);
+  scene.fog.color.copy(HORIZON); scene.fog.near = lerp(2500, 500, w); scene.fog.far = lerp(42000, 26000, w);
+}
 
 // ---------------------------------------------------------------- terrain
 function gridGeometry(n, size, heights, x0, z0) {
@@ -116,10 +135,19 @@ terrain.receiveShadow = true; scene.add(terrain);
 // ---------------------------------------------------------------- vegetation
 const sageGeo = new THREE.IcosahedronGeometry(0.55, 0); sageGeo.scale(1, 0.62, 1); sageGeo.translate(0, 0.25, 0);
 const rockGeo = new THREE.DodecahedronGeometry(0.6, 0); rockGeo.scale(1, 0.6, 0.8);
-const SAGE_PER = 260, ROCK_PER = 10, CH = 90, CR = 4, NCH = (2 * CR + 1) ** 2;
+const LOWSPEC = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+const SAGE_PER = LOWSPEC ? 200 : 300, ROCK_PER = 10, GRASS_PER = LOWSPEC ? 60 : 140, CH = 90, CR = 4, NCH = (2 * CR + 1) ** 2;
+function mergeGeos(list) { // tiny merge (position/normal only) for instanced props
+  const pos = [], nor = [], idx = []; let off = 0;
+  for (const g0 of list) { const g = g0.index ? g0.toNonIndexed() : g0; g.computeVertexNormals(); const p = g.attributes.position.array, n = g.attributes.normal.array; for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); } for (let i = 0; i < p.length / 3; i++) idx.push(off + i); off += p.length / 3; }
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setIndex(idx); return out;
+}
+const tuftGeo = (() => { const pos = []; for (let b = 0; b < 6; b++) { const a = (b / 6) * Math.PI * 2 + b, lean = 0.1 + (b % 3) * 0.05, h = 0.25 + (b % 2) * 0.12, w = 0.014, dx = Math.cos(a), dz = Math.sin(a), ox = dx * 0.035, oz = dz * 0.035; pos.push(ox - dz * w, 0, oz + dx * w, ox + dz * w, 0, oz - dx * w, ox + dx * lean, h, oz + dz * lean); } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g; })();
+const grass = new THREE.InstancedMesh(tuftGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide }), GRASS_PER * 25);
+grass.frustumCulled = false;
 const sage = new THREE.InstancedMesh(sageGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), SAGE_PER * NCH);
 const rocks = new THREE.InstancedMesh(rockGeo, new THREE.MeshLambertMaterial({ color: 0x9a9184 }), ROCK_PER * NCH);
-sage.frustumCulled = rocks.frustumCulled = false; rocks.castShadow = true; scene.add(sage, rocks);
+sage.frustumCulled = rocks.frustumCulled = false; rocks.castShadow = true; scene.add(sage, rocks, grass);
 const dummy = new THREE.Object3D(), tmpC = new THREE.Color();
 let lastChunk = '';
 function refillNear(px, pz) {
@@ -144,6 +172,18 @@ function refillNear(px, pz) {
       rocks.setMatrixAt(nr++, dummy.matrix);
     }
   }
+  // grass tufts only in the 5x5 chunks around the player
+  let ng = 0;
+  for (let j = cj - 2; j <= cj + 2; j++) for (let i = ci - 2; i <= ci + 2; i++) {
+    const rng = mulberry32((i * 92821) ^ (j * 68917) ^ 7);
+    for (let k = 0; k < GRASS_PER; k++) {
+      const x = (i + rng()) * CH, z = (j + rng()) * CH, sc = 0.7 + rng() * 0.9, hue = rng();
+      if (Math.abs(x) > HALF - 5 || Math.abs(z) > HALF - 5 || onRoad(x, z) || classify(x, z) === 'urban') continue;
+      dummy.position.set(x, heightAt(x, z) - 0.02, z); dummy.rotation.set((rng() - 0.5) * 0.4, rng() * 6.28, (rng() - 0.5) * 0.4); dummy.scale.setScalar(sc); dummy.updateMatrix();
+      grass.setMatrixAt(ng, dummy.matrix); grass.setColorAt(ng++, tmpC.setHSL(0.13 + hue * 0.07, 0.35, 0.38 + hue * 0.14));
+    }
+  }
+  grass.count = ng; grass.instanceMatrix.needsUpdate = true; if (grass.instanceColor) grass.instanceColor.needsUpdate = true;
   sage.count = ns; rocks.count = nr;
   sage.instanceMatrix.needsUpdate = rocks.instanceMatrix.needsUpdate = true; if (sage.instanceColor) sage.instanceColor.needsUpdate = true;
 }
@@ -152,21 +192,29 @@ function refillNear(px, pz) {
   const crownGeo = new THREE.IcosahedronGeometry(2.6, 1); crownGeo.scale(1, 1.25, 1); crownGeo.translate(0, 5, 0);
   const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x5a4632 }), MAX);
   const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), MAX);
+  // conifers (Douglas fir / lodgepole) on the high slopes: stacked cones
+  const firGeo = (() => { const parts = []; for (let k = 0; k < 4; k++) { const c = new THREE.ConeGeometry(2.4 - k * 0.5, 3.2, 7); c.translate(0, 2.4 + k * 1.9, 0); parts.push(c); } const tr = new THREE.CylinderGeometry(0.15, 0.25, 2.5, 5); tr.translate(0, 1.2, 0); parts.push(tr); return mergeGeos(parts); })();
+  const firs = new THREE.InstancedMesh(firGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), MAX);
+  let nf = 0;
   const rng = mulberry32(42); let n = 0;
   for (let t = 0; t < 900000 && n < MAX; t++) {
     const x = (rng() - 0.5) * (S - 20), z = (rng() - 0.5) * (S - 20);
     if (classify(x, z) !== 'tree') continue;
-    const s = 0.7 + rng() * 0.9;
-    dummy.position.set(x, heightAt(x, z) - 0.2, z); dummy.rotation.set(0, rng() * 6.28, 0); dummy.scale.set(s, s * (0.8 + rng() * 0.5), s); dummy.updateMatrix();
+    const s = 0.7 + rng() * 0.9, h = heightAt(x, z);
+    dummy.position.set(x, h - 0.2, z); dummy.rotation.set(0, rng() * 6.28, 0); dummy.scale.set(s, s * (0.8 + rng() * 0.5), s); dummy.updateMatrix();
+    if (h > 420 && nf < MAX) { firs.setMatrixAt(nf, dummy.matrix); firs.setColorAt(nf++, tmpC.setHSL(0.3 + rng() * 0.06, 0.32, 0.17 + rng() * 0.08)); continue; }
     trunks.setMatrixAt(n, dummy.matrix); crowns.setMatrixAt(n, dummy.matrix);
     crowns.setColorAt(n, tmpC.setHSL(0.2 + rng() * 0.08, 0.35, 0.22 + rng() * 0.1)); n++;
   }
-  trunks.count = crowns.count = n; crowns.castShadow = true; scene.add(trunks, crowns);
+  trunks.count = crowns.count = n; firs.count = nf; crowns.castShadow = firs.castShadow = true; scene.add(trunks, crowns, firs);
 }
 
 // ---------------------------------------------------------------- real roads, water, buildings (OpenStreetMap)
 const ROADGRID = 10, RN = Math.ceil(S / ROADGRID), roadCells = new Uint8Array(RN * RN);
-function onRoad(x, z) { const i = Math.floor((x + HALF) / ROADGRID), j = Math.floor((z + HALF) / ROADGRID); return i >= 0 && j >= 0 && i < RN && j < RN && roadCells[j * RN + i] === 1; }
+function roadAt(x, z) { const i = Math.floor((x + HALF) / ROADGRID), j = Math.floor((z + HALF) / ROADGRID); return i >= 0 && j >= 0 && i < RN && j < RN ? roadCells[j * RN + i] : 0; }
+const onRoad = (x, z) => roadAt(x, z) >= 1, onPaved = (x, z) => roadAt(x, z) === 2;
+const waterCells = new Uint8Array(RN * RN).fill(255); // distance to water in 2 m units (255 = far)
+function waterDistAt(x, z) { const i = Math.floor((x + HALF) / ROADGRID), j = Math.floor((z + HALF) / ROADGRID); return i >= 0 && j >= 0 && i < RN && j < RN ? waterCells[j * RN + i] * 2 : 999; }
 function ribbon(lines, lift, mat, renderOrder = 0) {
   const pos = [], idx = [];
   for (const L of lines) {
@@ -197,16 +245,23 @@ function ribbon(lines, lift, mat, renderOrder = 0) {
   ribbon(gravel, 0.22, new THREE.MeshLambertMaterial({ color: 0xa8977a, ...po }));
   ribbon(vec.water, 0.35, new THREE.MeshPhongMaterial({ color: 0x3f6f86, specular: 0x9fc7dd, shininess: 60, transparent: true, opacity: 0.85, ...po }), 1);
   for (const r of [...paved, ...gravel]) { // road lookup grid: trucks are faster on real roads
-    const P = r.pts, rad = r.w / 2 + 2;
+    const P = r.pts, rad = r.w / 2 + 2, isPaved = paved.includes(r);
     for (let k = 1; k < P.length; k++) {
       const [ax, az] = P[k - 1], [bx, bz] = P[k], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 4));
       for (let t = 0; t <= n; t++) {
         const x = ax + (bx - ax) * t / n, z = az + (bz - az) * t / n;
         for (let dz = -rad; dz <= rad; dz += ROADGRID / 2) for (let dx = -rad; dx <= rad; dx += ROADGRID / 2) {
           const i = Math.floor((x + dx + HALF) / ROADGRID), j = Math.floor((z + dz + HALF) / ROADGRID);
-          if (i >= 0 && j >= 0 && i < RN && j < RN) roadCells[j * RN + i] = 1;
+          if (i >= 0 && j >= 0 && i < RN && j < RN) roadCells[j * RN + i] = Math.max(roadCells[j * RN + i], isPaved ? 2 : 1);
         }
       }
+    }
+  }
+  for (const w of vec.water) for (let k = 0; k < w.pts.length; k += 2) { // water distance grid (for river sound)
+    const [x, z] = w.pts[k], ci = Math.floor((x + HALF) / ROADGRID), cj = Math.floor((z + HALF) / ROADGRID);
+    for (let dj = -12; dj <= 12; dj++) for (let di = -12; di <= 12; di++) {
+      const i = ci + di, j = cj + dj; if (i < 0 || j < 0 || i >= RN || j >= RN) continue;
+      const d = Math.min(254, Math.round(Math.hypot(di, dj) * ROADGRID / 2)); if (d < waterCells[j * RN + i]) waterCells[j * RN + i] = d;
     }
   }
   const wallM = new THREE.MeshLambertMaterial({ color: 0x9a8a74 }), roofM = new THREE.MeshLambertMaterial({ color: 0x4a4e55 });
@@ -244,9 +299,27 @@ function textSprite(text, w = 512, h = 128, bg = '#2a1d12', fg = '#f4ecdc') {
 
 // ---------------------------------------------------------------- people
 // Animated crew (Quaternius CC0 base + generated clothes, see chars.js)
+const rifleMats = { wood: std(0x6b4527, { roughness: 0.6 }), metal: std(0x222326, { metalness: 0.8, roughness: 0.35 }) };
+function buildRifle() { // built along +y, about 1.1 m long
+  const g = new THREE.Group(), M2 = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  M2(new THREE.BoxGeometry(0.045, 0.34, 0.09), rifleMats.wood, 0, 0.17, -0.01);           // stock
+  M2(new THREE.BoxGeometry(0.04, 0.28, 0.06), rifleMats.wood, 0, 0.48, 0);                  // forend
+  M2(new THREE.BoxGeometry(0.045, 0.2, 0.05), rifleMats.metal, 0, 0.42, 0.01);             // receiver
+  M2(new THREE.CylinderGeometry(0.011, 0.013, 0.55, 8), rifleMats.metal, 0, 0.82, 0.015);   // barrel
+  M2(new THREE.CylinderGeometry(0.018, 0.018, 0.28, 10), rifleMats.metal, 0, 0.45, 0.06);   // scope
+  M2(new THREE.CylinderGeometry(0.025, 0.018, 0.05, 10), rifleMats.metal, 0, 0.6, 0.06);
+  M2(new THREE.CylinderGeometry(0.018, 0.024, 0.05, 10), rifleMats.metal, 0, 0.3, 0.06);
+  return g;
+}
 function buildPerson(c) {
   const ch = buildCharacter(kit, LOOKS[c.id]);
   ch.root.userData = { ch, talkT: 0 };
+  // rifle slung diagonally across the back, rigged to the upper spine
+  const si = ch.skeleton.bones.findIndex((b) => b.name === 'spine_03');
+  if (si >= 0) {
+    const r = buildRifle(); r.rotation.z = 0.85; r.position.set(0.28, 0.95, -0.16); r.updateMatrix();
+    const holder = new THREE.Group(); holder.add(r); holder.applyMatrix4(ch.skeleton.boneInverses[si]); ch.skeleton.bones[si].add(holder);
+  }
   return ch.root;
 }
 function animatePerson(p, speed, dt, crouch = false, talking = false) {
@@ -263,37 +336,9 @@ function animatePerson(p, speed, dt, crouch = false, talking = false) {
 
 // ---------------------------------------------------------------- vehicles
 const vehicles = [];
-function wheel(r, w) { const g = new THREE.CylinderGeometry(r, r, w, 18); g.rotateZ(Math.PI / 2); return g; }
-function buildTruck() {
-  const g = new THREE.Group(), paint = std(0x8c2a22, { roughness: 0.35, metalness: 0.3 }), dark = std(0x1b1b1b), glass = std(0x22313d, { roughness: 0.1 });
-  g.add(box(2.0, 0.75, 5.6, paint, 0, 0.95, 0));          // chassis/body
-  g.add(box(1.92, 0.85, 1.9, paint, 0, 1.75, 0.15));      // cab
-  g.add(box(1.94, 0.6, 1.7, glass, 0, 1.82, 0.16));
-  g.add(box(2.0, 0.5, 2.2, paint, 0, 1.55, -1.7));        // bed walls
-  g.add(box(1.7, 0.52, 2.0, dark, 0, 1.58, -1.7));
-  g.add(box(2.05, 0.3, 0.25, std(0xb5b5b5, { metalness: 0.8, roughness: 0.3 }), 0, 0.75, 2.85));
-  for (const x of [0.6, -0.6]) g.add(box(0.35, 0.15, 0.05, std(0xfff3c4, { emissive: 0x665f3d }), x, 1.1, 2.81));
-  for (const [x, z] of [[0.95, 1.8], [-0.95, 1.8], [0.95, -1.8], [-0.95, -1.8]]) { const w = new THREE.Mesh(wheel(0.45, 0.35), dark); w.position.set(x, 0.45, z); w.castShadow = true; g.add(w); }
-  return g;
-}
-function buildXterra() {
-  const g = new THREE.Group(), paint = std(0xf2f2ee, { roughness: 0.35, metalness: 0.2 }), dark = std(0x1a1a1a), glass = std(0x1f2a33, { roughness: 0.1 });
-  g.add(box(1.85, 0.9, 4.5, paint, 0, 1.05, 0));
-  g.add(box(1.8, 0.85, 3.1, paint, 0, 1.9, -0.45));
-  g.add(box(1.82, 0.55, 3.0, glass, 0, 1.95, -0.4));
-  g.add(box(1.5, 0.12, 2.6, dark, 0, 2.42, -0.45));                         // roof rack
-  g.add(box(1.4, 0.25, 0.3, dark, 0, 2.6, -0.2));                           // rack box
-  g.add(box(0.45, 0.6, 0.25, std(0xc8261d), 0.55, 1.95, -2.15));            // red jerry can
-  g.add(box(0.45, 0.6, 0.25, std(0xd8d8d0), 0.05, 1.95, -2.15));
-  const spare = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 18), dark); spare.rotation.x = Math.PI / 2; spare.position.set(-0.45, 1.3, -2.45); g.add(spare);
-  g.add(box(1.95, 0.3, 0.3, dark, 0, 0.7, -2.3)); g.add(box(1.95, 0.3, 0.3, dark, 0, 0.7, 2.3));
-  for (const x of [0.5, -0.5]) g.add(box(0.3, 0.12, 0.05, std(0xfff3c4, { emissive: 0x665f3d }), x, 1.2, 2.26));
-  const ant = box(0.03, 1.4, 0.03, dark, 0.8, 2.9, -1.2); g.add(ant);
-  for (const [x, z] of [[0.92, 1.45], [-0.92, 1.45], [0.92, -1.45], [-0.92, -1.45]]) { const w = new THREE.Mesh(wheel(0.43, 0.36), dark); w.position.set(x, 0.43, z); w.castShadow = true; g.add(w); }
-  return g;
-}
-function addVehicle(name, mesh, x, z, heading, opts = {}) {
-  const v = { name, mesh, pos: new THREE.Vector3(x, heightAt(x, z), z), heading, speed: 0, steer: 0, wb: opts.wb || 3.4, half: opts.half || 0.95, top: opts.top || 33, owner: opts.owner };
+function addVehicle(name, built, x, z, heading, opts = {}) {
+  const mesh = built.group;
+  const v = { name, mesh, pos: new THREE.Vector3(x, heightAt(x, z), z), heading, speed: 0, steer: 0, wb: built.wb, half: built.half, top: opts.top || 33, owner: opts.owner, wheels: built.wheels, seats: built.seats, wheelR: built.wheelR, riders: [] };
   scene.add(mesh); vehicles.push(v); placeVehicle(v, 1); return v;
 }
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -307,44 +352,12 @@ function placeVehicle(v, t) {
   _q.setFromEuler(_e); v.mesh.quaternion.slerp(_q, t);
   v.mesh.position.copy(v.pos);
 }
-const truck = addVehicle('the crew truck', buildTruck(), HQ.x - 12, HQ.z + 14, 1.2 + Math.PI);
-const xterra = addVehicle("Slime's Xterra", buildXterra(), HQ.x - 7, HQ.z + 17, 1.2 + Math.PI, { wb: 2.9, half: 0.92, top: 30, owner: 'slime' });
+const truck = addVehicle('the crew truck', buildPickup(), HQ.x - 12, HQ.z + 14, 1.2 + Math.PI);
+const xterra = addVehicle("Slime's Xterra", buildXterra(), HQ.x - 7, HQ.z + 17, 1.2 + Math.PI, { top: 30, owner: 'slime' });
 
 // ---------------------------------------------------------------- wildlife
 const animals = [];
 const ELK_ZONE = { x0: 2000, x1: 5200, z0: -4600, z1: -1400 }; // upper Bohannon Creek drainage (Eagle Valley area, best guess from public maps)
-function buildAnimal(kind, male) {
-  const elk = kind === 'elk', g = new THREE.Group(), s = elk ? 1.45 : 1;
-  const coat = std(elk ? 0xa0703f : 0x8d8071), darkC = std(elk ? 0x4d3322 : 0x6e6357), pale = std(elk ? 0xd9c49a : 0xe8e2d6), hoof = std(0x2a2420);
-  const mk = (w, h, d, m, x, y, z) => { const b = box(w * s, h * s, d * s, m, x * s, y * s, z * s); return b; };
-  g.add(mk(0.42, 0.45, 1.15, coat, 0, 1.0, 0));
-  g.add(mk(0.36, 0.36, 0.2, pale, 0, 1.02, -0.58));                         // rump patch
-  const neck = mk(0.22, 0.6, 0.26, elk ? darkC : coat, 0, 1.38, 0.52); neck.rotation.x = 0.5; g.add(neck);
-  const head = new THREE.Group(); head.position.set(0, 1.68 * s, 0.72 * s); g.add(head);
-  head.add(box(0.18 * s, 0.2 * s, 0.42 * s, elk ? darkC : coat, 0, 0, 0.12 * s));
-  head.add(box(0.12 * s, 0.1 * s, 0.1 * s, std(0x222222), 0, -0.03 * s, 0.34 * s));
-  const earW = elk ? 0.08 : 0.16, earH = elk ? 0.16 : 0.26;  // mule deer = big ears
-  for (const x of [0.12, -0.12]) { const e = box(earW * s, earH * s, 0.04 * s, coat, x * s, 0.13 * s, -0.04 * s); e.rotation.z = x > 0 ? -0.7 : 0.7; head.add(e); }
-  if (!elk) g.add(mk(0.08, 0.2, 0.06, pale, 0, 1.12, -0.6)), g.add(mk(0.06, 0.06, 0.06, std(0x111111), 0, 1.0, -0.62));
-  let points = 0;
-  if (male) {
-    const ant = std(0xcbb894, { roughness: 0.6 });
-    points = elk ? 5 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 4);
-    for (const side of [1, -1]) {
-      const beam = new THREE.Group(); beam.position.set(0.07 * side * s, 0.1 * s, 0); beam.rotation.set(-0.5, 0, -0.5 * side); head.add(beam);
-      const len = (elk ? 1.1 : 0.55) * s;
-      const main = box(0.035 * s, len, 0.035 * s, ant, 0, len / 2, 0); beam.add(main);
-      for (let k = 1; k < points; k++) { const tine = box(0.025 * s, len * 0.35, 0.025 * s, ant, 0, (k / points) * len, 0.05 * s); tine.rotation.x = 0.9; tine.position.z += len * 0.12; beam.add(tine); }
-    }
-  }
-  const legs = [];
-  for (const [x, z] of [[0.13, 0.42], [-0.13, 0.42], [0.13, -0.42], [-0.13, -0.42]]) {
-    const geo = new THREE.BoxGeometry(0.09 * s, 0.8 * s, 0.09 * s); geo.translate(0, -0.4 * s, 0);
-    const l = new THREE.Mesh(geo, darkC); l.position.set(x * s, 0.82 * s, z * s); l.castShadow = true; g.add(l); legs.push(l);
-  }
-  g.userData = { legs, head };
-  return { mesh: g, points };
-}
 function spawnPoint(kind, far) {
   for (let t = 0; t < 400; t++) {
     let x, z;
@@ -375,19 +388,66 @@ const player = { pos: HQ.clone().add(new THREE.Vector3(-17, 0, 9)), vy: 0, yaw: 
 let camYaw = player.yaw + Math.PI, camPitch = 0.25, camIdle = 0, scoping = false;
 let tags = store.get('tags', []);
 const npcs = [];
+const followers = new Set(store.get('followers', ['skin', 'hewitt']));
+function homeSpot(i) { const ang = 0.3 + (i - 2) * 0.5, p = HQ.clone().add(new THREE.Vector3(Math.sin(ang) * 9 - 6, 0, Math.cos(ang) * 9 + 8)); p.y = heightAt(p.x, p.z); return p; }
+function newNpc(k, model, i) { return { crew: k, model, mode: followers.has(k.id) ? 'follow' : 'idle', home: homeSpot(i), yaw: rand(-1, 1), talkT: 0, vehicle: null, seat: null }; }
+function seatModel(m, v, seat) { m.removeFromParent(); v.mesh.add(m); m.position.set(seat.x, seat.y, seat.z); m.rotation.set(0, seat.face || 0, 0); m.visible = true; m.userData.ch.play(seat.pose, 0.15); }
+function leaveSeat(n, side = 0) {
+  if (n.mode !== 'ride' || !n.vehicle) return;
+  const v = n.vehicle, m = n.model, lx = Math.cos(v.heading), lz = -Math.sin(v.heading), fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+  m.removeFromParent(); scene.add(m);
+  const sx = n.seat.x > 0 ? 1 : -1; m.position.set(v.pos.x + lx * sx * 2.2 - fx * (1 + side * 1.2), 0, v.pos.z + lz * sx * 2.2 - fz * (1 + side * 1.2));
+  m.position.y = heightAt(m.position.x, m.position.z); m.rotation.set(0, v.heading, 0);
+  n.mode = 'follow'; n.vehicle = null; n.seat = null; v.riders = v.riders.filter((r) => r !== n);
+}
 function setCrew(id) {
-  const c = CREW.find((k) => k.id === id); player.crew = c;
-  if (player.model) scene.remove(player.model);
-  player.model = buildPerson(c); scene.add(player.model); player.model.visible = !player.inVehicle;
-  player.stamina = 100; player.exhausted = false;
-  for (const n of npcs) scene.remove(n.model); npcs.length = 0;
-  CREW.filter((k) => k.id !== id).forEach((k, i) => {
-    const ang = 0.3 + (i - 2) * 0.5, p = HQ.clone().add(new THREE.Vector3(Math.sin(ang) * 9 - 6, 0, Math.cos(ang) * 9 + 8));
-    p.y = heightAt(p.x, p.z); const m = buildPerson(k); m.position.copy(p); m.rotation.y = rand(-1, 1) + Math.PI * 0.1; scene.add(m);
-    npcs.push({ crew: k, model: m, talkCd: 0 });
+  const c = CREW.find((k) => k.id === id), prev = started && player.crew ? player.crew : null, prevModel = player.model;
+  let model; const idx = npcs.findIndex((n) => n.crew.id === id);
+  if (idx >= 0) { const n = npcs[idx]; leaveSeat(n); model = n.model; model.removeFromParent(); scene.add(model); npcs.splice(idx, 1); }
+  else { model = buildPerson(c); scene.add(model); }
+  player.crew = c; player.model = model; model.visible = !player.inVehicle;
+  if (prevModel && prevModel !== model) {
+    if (prev) { followers.add(prev.id); const n = newNpc(prev, prevModel, npcs.length); n.mode = 'follow'; prevModel.position.copy(player.pos); npcs.push(n); }
+    else scene.remove(prevModel);
+  }
+  followers.delete(id); store.set('followers', [...followers]);
+  if (!prev && !npcs.length) CREW.filter((k) => k.id !== id).forEach((k, i) => {
+    const m = buildPerson(k), n = newNpc(k, m, i); scene.add(m);
+    m.position.copy(n.mode === 'follow' ? player.pos.clone().add(new THREE.Vector3(rand(-4, 4), 0, rand(-4, 4))) : n.home); m.position.y = heightAt(m.position.x, m.position.z);
+    npcs.push(n);
   });
+  player.stamina = 100; player.exhausted = false;
   $('whoImg').src = `assets/portraits/${c.id}.jpg`; $('whoName').textContent = c.name; $('whoRole').textContent = c.role + ' · ' + c.ability;
-  store.set('crew', id);
+  store.set('crew', id); renderCrewBar();
+}
+function renderCrewBar() {
+  const el = $('crewbar'); if (!el) return;
+  el.innerHTML = npcs.filter((n) => n.mode !== 'idle').map((n) => `<img src="assets/portraits/${n.crew.id}.jpg" alt="${n.crew.name}" title="${n.crew.name}">`).join('');
+}
+const SLOTS = [[-2.4, -0.6], [2.4, -0.6], [-3.6, -2.6], [3.6, -2.6], [-4.8, -0.2]]; // beside the hunter, out of the camera line
+const angLerp = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, t);
+function updateNpcs(dt) {
+  let si = 0;
+  for (const n of npcs) {
+    const m = n.model; n.talkT -= dt;
+    if (n.mode === 'ride') { m.userData.ch.play(n.seat.pose, 0.3); m.userData.ch.mixer.update(dt); continue; }
+    if (n.mode === 'idle') { animatePerson(m, 0, dt, false, n.talkT > 0); continue; }
+    if (n.cheerT > 0) { n.cheerT -= dt; m.userData.ch.mixer.update(dt); continue; }
+    const [ox, oz] = SLOTS[si++ % SLOTS.length], cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
+    const tx = player.pos.x + ox * cy + oz * sy, tz = player.pos.z - ox * sy + oz * cy;
+    const dx = tx - m.position.x, dz = tz - m.position.z, d = Math.hypot(dx, dz);
+    if (d > 70) { m.position.set(player.pos.x - sy * 14 + rand(-3, 3), 0, player.pos.z - cy * 14 + rand(-3, 3)); m.position.y = heightAt(m.position.x, m.position.z); continue; }
+    let spd = 0;
+    if (!scoping && d > 0.8) spd = player.crouch ? 1.25 : d > 10 ? 5.4 : d > 3 ? 3.3 : 1.4;
+    if (spd) { const step = Math.min(d, spd * dt); m.position.x += dx / d * step; m.position.z += dz / d * step; n.yaw = angLerp(n.yaw, Math.atan2(dx, dz), dt * 8); }
+    else n.yaw = angLerp(n.yaw, player.yaw, dt * 2);
+    m.rotation.y = n.yaw; m.position.y = heightAt(m.position.x, m.position.z);
+    animatePerson(m, spd, dt, player.crouch || scoping, n.talkT > 0);
+  }
+}
+function crewLine(kind, pred) {
+  const pool = npcs.filter((n) => n.mode !== 'idle' && n.crew.lines[kind] && (!pred || pred(n))); if (!pool.length) return null;
+  const n = pick(pool); say(n.crew.name, pick(n.crew.lines[kind])); n.talkT = 2.6; return n;
 }
 
 // ---------------------------------------------------------------- dialogue & toasts
@@ -422,7 +482,7 @@ addEventListener('mouseup', (e) => {
 addEventListener('mousemove', (e) => {
   if (!started || !(locked() || dragging)) return;
   moved += Math.abs(e.movementX) + Math.abs(e.movementY);
-  const sens = scoping ? 0.0006 : 0.0024;
+  const sens = scoping ? 0.0024 * camera.fov / 65 : 0.0024;
   camYaw -= e.movementX * sens; camPitch = clamp(camPitch + e.movementY * sens, -1.2, 1.3); camIdle = 0;
 });
 addEventListener('keydown', (e) => {
@@ -435,6 +495,9 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyQ') setScope(!scoping);
   if (e.code === 'KeyC') player.crouch = !player.crouch;
   if (e.code === 'KeyE') talk();
+  if (e.code === 'KeyP') takePhoto();
+  if (e.code === 'KeyN') $('sndBtn').textContent = audio.toggle() ? 'Sound on' : 'Sound off';
+  if (e.code === 'KeyZ' && scoping) cycleZoom();
   const n = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5 }[e.code];
   if (n != null && !player.inVehicle) { setCrew(CREW[n].id); bark('select'); }
   if (e.code === 'Space') e.preventDefault();
@@ -465,12 +528,16 @@ if (touchMode) {
   tap('tTruck', toggleVehicle); tap('tScope', () => setScope(!scoping)); tap('tShoot', () => (scoping ? shoot() : setScope(true)));
   tap('tCrouch', () => { player.crouch = !player.crouch; $('tCrouch').classList.toggle('on', player.crouch); });
   tap('tTalk', talk); tap('tMap', () => $('map').classList.toggle('hidden'));
+  tap('tZoom', () => (scoping ? cycleZoom() : setScope(true))); tap('tPhoto', takePhoto);
   const run = $('tRun');
   run.addEventListener('pointerdown', () => { touchSprint = true; run.classList.add('on'); });
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) run.addEventListener(ev, () => { touchSprint = false; run.classList.remove('on'); });
   $('who').addEventListener('click', () => { if (!started || player.inVehicle) return; const i = CREW.findIndex((c) => c.id === player.crew.id); setCrew(CREW[(i + 1) % CREW.length].id); bark('select'); });
 }
 $('map').addEventListener('click', () => $('map').classList.add('hidden'));
+$('photoClose').onclick = () => $('photo').classList.add('hidden');
+$('sndBtn').onclick = () => { audio.start(); $('sndBtn').textContent = audio.toggle() ? 'Sound on' : 'Sound off'; };
+addEventListener('pointerdown', () => audio.start());
 
 function setScope(on) {
   if (on && player.inVehicle) return;
@@ -478,23 +545,39 @@ function setScope(on) {
   if (on) { camYaw = player.yaw + Math.PI; camPitch = clamp(camPitch, -0.4, 0.4); }
 }
 function nearestVehicle() { let best = null, bd = 5.5; for (const v of vehicles) { const d = v.pos.distanceTo(player.pos); if (d < bd) { bd = d; best = v; } } return best; }
+function boardVehicle(v) {
+  player.inVehicle = v; setScope(false); $('speed').classList.remove('hidden');
+  seatModel(player.model, v, v.seats.find((x) => x.driver));
+  const free = v.seats.filter((x) => !x.driver);
+  for (const n of npcs) if (n.mode === 'follow' && n.model.position.distanceTo(v.pos) < 70 && free.length) { const seat = free.shift(); n.mode = 'ride'; n.vehicle = v; n.seat = seat; seatModel(n.model, v, seat); v.riders.push(n); }
+  audio.door();
+}
+function unboardVehicle() {
+  const v = player.inVehicle; if (!v) return;
+  const lx = Math.cos(v.heading), lz = -Math.sin(v.heading);
+  player.model.removeFromParent(); scene.add(player.model); player.model.rotation.set(0, v.heading, 0);
+  player.pos.set(v.pos.x + lx * 2.2, 0, v.pos.z + lz * 2.2); player.pos.y = heightAt(player.pos.x, player.pos.z); player.yaw = v.heading;
+  [...v.riders].forEach((n, i) => leaveSeat(n, i));
+  player.inVehicle = null; $('speed').classList.add('hidden'); audio.door();
+}
 function toggleVehicle() {
   if (player.inVehicle) {
-    const v = player.inVehicle; if (Math.abs(v.speed) > 4) { toast('Slow down', 'Stop the truck before jumping out.', 1.5); return; }
-    const lx = Math.cos(v.heading), lz = -Math.sin(v.heading);
-    player.pos.set(v.pos.x + lx * 2.2, 0, v.pos.z + lz * 2.2); player.pos.y = heightAt(player.pos.x, player.pos.z);
-    player.inVehicle = null; player.model.visible = true; $('speed').classList.add('hidden');
+    if (Math.abs(player.inVehicle.speed) > 4) { toast('Slow down', 'Stop the truck before jumping out.', 1.5); return; }
+    unboardVehicle();
   } else {
     const v = nearestVehicle(); if (!v) return;
-    player.inVehicle = v; player.model.visible = false; setScope(false); $('speed').classList.remove('hidden');
+    boardVehicle(v);
     if (v.owner === 'slime' && player.crew.id === 'slime') say('Slime', 'Ah. Home.');
     else if (v.owner === 'slime') say(player.crew.name, 'Slime is going to notice the seat moved.');
+    else setTimeout(() => crewLine('ride'), 1800);
   }
 }
+function nearestNpc(r = 4) { let best = null, bd = r; for (const n of npcs) { if (n.mode === 'ride') continue; const d = n.model.position.distanceTo(player.pos); if (d < bd) { bd = d; best = n; } } return best; }
 function talk() {
-  let best = null, bd = 4; for (const n of npcs) { const d = n.model.position.distanceTo(player.pos); if (d < bd) { bd = d; best = n; } }
-  if (!best) return;
+  const best = nearestNpc(); if (!best) return;
   const c = best.crew;
+  if (best.mode === 'idle') { best.mode = 'follow'; followers.add(c.id); store.set('followers', [...followers]); say(c.name, pick(c.lines.join)); best.talkT = 2.6; renderCrewBar(); return; }
+  if (player.pos.distanceTo(HQ) < 45 && best.mode === 'follow' && keys.ShiftLeft) { best.mode = 'idle'; followers.delete(c.id); best.model.position.copy(best.home); say(c.name, 'I\'ll hold down the fort.'); renderCrewBar(); return; }
   let line = pick(c.lines.idle);
   if ((c.id === 'skin' && player.crew.id === 'dawg') || (c.id === 'dawg' && player.crew.id === 'skin')) line = pick(["Here we go again.", "No, you're wrong. Let me tell you why.", "We are NOT stopping at the Amish store."]);
   say(c.name, line); best.model.userData.talkT = 3.2;
@@ -520,21 +603,42 @@ function animalUnderCrosshair(maxD = 900) {
 function shoot() {
   if (!scoping || player.inVehicle) return;
   const hit = animalUnderCrosshair(), aim = player.crew.stats.aim, maxRange = 150 + aim * 30;
-  if (hit && !hit.a.male) { say(player.crew.name, "That's a " + (hit.a.kind === 'elk' ? 'cow' : 'doe') + '. Hold off, no tag for that.'); return; }
-  flashShot();
+  if (hit && !hit.a.male) {
+    if (player.crew.id === 'kyle' && hit.a.kind === 'elk') return kyleWrongElk(hit);
+    say(player.crew.name, "That's a " + (hit.a.kind === 'elk' ? 'cow' : 'doe') + '. Hold off, no tag for that.'); return;
+  }
+  flashShot(); audio.shot();
   for (const a of animals) if (a.state !== 'down' && a.pos.distanceTo(player.pos) < 700) { a.state = 'flee'; a.t = rand(6, 10); a.fleeFrom = player.pos.clone(); }
   if (hit && hit.vital && hit.d <= maxRange) {
     const a = hit.a; a.state = 'down'; a.gone = 90;
     const t = { kind: a.kind, points: a.points, dist: Math.round(hit.d), who: player.crew.name, when: Date.now() }; tags.push(t); store.set('tags', tags); updateTags();
     toast('Tagged!', `${label(a)} · ${t.dist} m · ${player.crew.name}`, 4);
+    slowT = 1.6; drawTrophyBoard();
     setTimeout(() => bark('harvest'), 900);
+    setTimeout(() => { const n = crewLine('harvest'); for (const f of npcs) if (f.mode === 'follow') { f.talkT = 0; f.model.userData.ch.play('Dance_Loop', 0.2); f.cheerT = 2.5; } }, 2600);
+    setTimeout(() => toast('Trophy photo?', touchMode ? 'Tap Photo to snap one for the group text.' : 'Press P to snap one for the group text.', 3), 5200);
   } else {
     if (hit && hit.d > maxRange) toast('Missed', `Too far for ${player.crew.name} (${Math.round(hit.d)} m). Get closer.`, 2.5);
     else if (hit) toast('Missed', 'Just behind the shoulder. It took off.', 2.2);
     setTimeout(() => bark('miss'), 600);
+    setTimeout(() => crewLine('roast'), 2300);
   }
 }
+function kyleWrongElk(hit) { // the legend
+  const a = hit.a; flashShot(); audio.shot(); slowT = 1.6;
+  for (const b of animals) if (b !== a && b.state !== 'down' && b.pos.distanceTo(player.pos) < 700) { b.state = 'flee'; b.t = rand(6, 10); b.fleeFrom = player.pos.clone(); }
+  a.state = 'down'; a.gone = 120;
+  tags.push({ kind: 'elk', points: 0, dist: Math.round(hit.d), who: 'Kyle', when: Date.now(), note: 'wrong elk' }); store.set('tags', tags); updateTags(); drawTrophyBoard();
+  toast('WRONG ELK', 'Kyle shot a cow. The crew will never let this go.', 5);
+  const crewNow = npcs.filter((n) => n.mode !== 'idle' && n.crew.lines.wrongElk);
+  let tt = 2200; for (const n of crewNow.slice(0, 3)) { setTimeout(() => { say(n.crew.name, pick(n.crew.lines.wrongElk)); n.talkT = 2.5; }, tt); tt += 2600; }
+  setTimeout(() => say('Kyle', pick(CREW.find((c) => c.id === 'kyle').lines.wrongElk)), tt);
+}
+let slowT = 0;
 let flashT = 0; function flashShot() { flashT = 0.12; }
+const ZOOMS = [22, 11, 5.5]; let zoomIdx = 1;
+function cycleZoom() { zoomIdx = (zoomIdx + 1) % ZOOMS.length; toastOnce('Scope', `${[3, 6, 12][zoomIdx]}x`); }
+addEventListener('wheel', (e) => { if (scoping) { zoomIdx = clamp(zoomIdx + (e.deltaY < 0 ? 1 : -1), 0, ZOOMS.length - 1); } }, { passive: true });
 
 // ---------------------------------------------------------------- map
 const mapbox = $('mapbox'), mapDots = {};
@@ -544,13 +648,134 @@ mapDot('hq', '#f08a24', 'Crew HQ'); mapDot('elk', 'transparent', 'Eagle Valley �
 mapDot('truck', '#8c2a22', 'Truck'); mapDot('xterra', '#f2f2ee', 'Xterra'); mapDot('me', '#3fa9f5', 'You');
 setDot('hq', HQ.x, HQ.z); setDot('elk', (ELK_ZONE.x0 + ELK_ZONE.x1) / 2, (ELK_ZONE.z0 + ELK_ZONE.z1) / 2);
 
+// ---------------------------------------------------------------- dust, banter, gate, quick start, fast travel, trophies, photos
+const dustTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 30); gr.addColorStop(0, 'rgba(200,180,150,0.55)'); gr.addColorStop(1, 'rgba(200,180,150,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+const dust = []; let dustAcc = 0;
+for (let i = 0; i < 40; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, transparent: true, depthWrite: false, opacity: 0 })); sp.visible = false; scene.add(sp); dust.push({ sp, life: 0 }); }
+function emitDust(v, dt) {
+  const sp = Math.abs(v.speed); if (sp < 4 || onPaved(v.pos.x, v.pos.z)) return;
+  dustAcc += dt * sp * 0.6; while (dustAcc > 1) { dustAcc -= 1;
+    const d = dust.find((q) => q.life <= 0); if (!d) return;
+    const back = -Math.sign(v.speed) * 2.8; d.sp.position.set(v.pos.x + Math.sin(v.heading) * back + rand(-0.8, 0.8), v.pos.y + 0.5, v.pos.z + Math.cos(v.heading) * back + rand(-0.8, 0.8));
+    d.life = 2.2; d.sp.visible = true; d.sp.scale.setScalar(1.5); }
+}
+function updateDust(dt) { for (const d of dust) if (d.life > 0) { d.life -= dt; d.sp.material.opacity = Math.max(0, d.life / 2.2) * 0.7; d.sp.scale.multiplyScalar(1 + dt * 0.9); d.sp.position.y += dt * 0.5; if (d.life <= 0) d.sp.visible = false; } }
+function updateBanter(dt) {
+  banterT -= dt; if (banterT < 0) { banterT = rand(45, 85); crewLine(player.inVehicle ? 'ride' : 'idle'); }
+  if (player.uphillT > 3 && !(cds.crewUp > 0)) { if (crewLine('uphill', (n) => n.crew.id === 'dawg') || crewLine('tired', (n) => n.crew.id === 'skin')) cds.crewUp = 35; }
+  spotT -= dt; if (spotT < 0 && !player.inVehicle) { spotT = 1;
+    const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
+    for (const a of animals) {
+      if (a.spotted || !a.male || (a.state !== 'graze' && a.state !== 'walk')) continue;
+      const dx = a.pos.x - player.pos.x, dz = a.pos.z - player.pos.z, d = Math.hypot(dx, dz);
+      if (d > 110 && d < 330 && (dx * fx + dz * fz) / d > 0.55) { a.spotted = true; if (!(cds.spot > 0)) { (crewLine('spot', (n) => n.crew.id === 'hewitt') || crewLine('spot')); cds.spot = 25; } break; }
+    }
+  }
+  bugleT -= dt; if (bugleT < 0) { bugleT = rand(40, 90);
+    let best = 1e9; for (const a of animals) if (a.kind === 'elk' && a.male && a.state !== 'down') best = Math.min(best, a.pos.distanceTo(player.pos));
+    if (best < 2600) { audio.bugle(best); if (best < 1600) setTimeout(() => say('', '<i>An elk bugles somewhere up the drainage.</i>', 3), 600); }
+  }
+}
+// Eagle Valley gate on Bohannon Creek Road (fictional game gate at the ranch fields)
+const GATE = new THREE.Vector3(1492.7, 0, -1300.4), GATE_HEADING = Math.atan2(1490.8 - 1492.7, -1361.7 - -1300.4); GATE.y = heightAt(GATE.x, GATE.z);
+{
+  const g = new THREE.Group(); g.position.copy(GATE); g.rotation.y = GATE_HEADING; scene.add(g);
+  const pipe = std(0x6f6a62, { metalness: 0.6, roughness: 0.5 }), wood = std(0x5a4632);
+  for (const x of [-4.2, 4.2]) g.add(box(0.3, 2.2, 0.3, wood, x, 1.0, 0));
+  const leaf = new THREE.Group(); leaf.position.set(4.2, 0, 0); leaf.rotation.y = 1.9; g.add(leaf); // swung open
+  for (const y of [0.5, 0.9, 1.3]) leaf.add(box(4.1, 0.07, 0.07, pipe, -2.05, y, 0));
+  for (const x of [-0.1, -2.05, -4.0]) leaf.add(box(0.07, 0.95, 0.07, pipe, x, 0.9, 0));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.8), new THREE.MeshBasicMaterial({ map: textSprite('EAGLE VALLEY'), side: THREE.DoubleSide }));
+  sign.position.set(0, 2.6, 0); g.add(sign, box(8.7, 0.18, 0.18, wood, 0, 2.2, 0));
+}
+function spawnHerdAt(kind, cx, cz, n) {
+  n = n || (kind === 'elk' ? 5 + Math.floor(Math.random() * 4) : 3);
+  for (let i = 0; i < n; i++) {
+    const male = i === 0 || Math.random() < 0.25, { mesh, points } = buildAnimal(kind, male);
+    const a = { kind, male, points, mesh, pos: new THREE.Vector3(cx + rand(-20, 20), 0, cz + rand(-20, 20)), heading: rand(0, 6.28), state: 'graze', t: rand(2, 8), speed: 0, gone: 0 };
+    a.pos.y = heightAt(a.pos.x, a.pos.z); mesh.position.copy(a.pos); scene.add(mesh); animals.push(a);
+  }
+}
+function placeCrewAround(x, z) { for (const n of npcs) if (n.mode === 'follow') { n.model.position.set(x + rand(-4, 4), 0, z + rand(-4, 4)); n.model.position.y = heightAt(n.model.position.x, n.model.position.z); } }
+function teleport(x, z, heading, { inTruck = false, speed = 0 } = {}) {
+  if (player.inVehicle) unboardVehicle();
+  truck.pos.set(x, heightAt(x, z), z); truck.heading = heading; truck.speed = 0; placeVehicle(truck, 1);
+  const lx = Math.cos(heading), lz = -Math.sin(heading);
+  player.pos.set(x + lx * 2.4, 0, z + lz * 2.4); player.pos.y = heightAt(player.pos.x, player.pos.z); player.yaw = heading;
+  placeCrewAround(player.pos.x, player.pos.z);
+  if (inTruck) { boardVehicle(truck); truck.speed = speed; }
+  camYaw = heading + Math.PI; lastChunk = '';
+}
+function nearestRoadPoint(x, z, maxR = 600) {
+  let best = null, bd = maxR;
+  for (const r of vec.roads) for (const p of r.pts) { const d = Math.hypot(p[0] - x, p[1] - z); if (d < bd) { bd = d; best = { p, r }; } }
+  return best;
+}
+const DESTS = {
+  hq: () => {},
+  gate: () => { teleport(GATE.x - Math.sin(GATE_HEADING) * 25, GATE.z - Math.cos(GATE_HEADING) * 25, GATE_HEADING, { inTruck: true });
+    const skin = player.crew.id === 'skin' ? player.crew : npcs.find((n) => n.crew.id === 'skin' && n.mode !== 'idle');
+    setTimeout(() => { if (skin) { say('Skin', 'I know a guy. We\'re good.'); toast('Gate\'s open', 'Skin talked to the owners. Elk country is up the road.', 4); } else toast('Eagle Valley', 'The gate\'s open. Elk country is up the road.', 4); }, 1200); },
+  hunt: () => { // drop in on a ridge with a herd below
+    const cx = rand(ELK_ZONE.x0 + 400, ELK_ZONE.x1 - 400), cz = rand(ELK_ZONE.z0 + 400, ELK_ZONE.z1 - 400); spawnHerdAt('elk', cx, cz);
+    let px = cx + 220, pz = cz, best = -1e9;
+    const ty = heightAt(cx, cz) + 1.2;
+    for (let k = 0; k < 24; k++) for (const r of [200, 240, 280]) { // a spot that can actually see the herd, a bit above it
+      const a = (k / 24) * Math.PI * 2, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, ey = heightAt(x, z) + 1.4;
+      let clear = true; for (let t = 0.04; t < 0.97; t += 0.03) { if (heightAt(lerp(x, cx, t), lerp(z, cz, t)) > lerp(ey, ty, t) - 0.6) { clear = false; break; } }
+      const rise = ey - ty, score = (clear ? 1000 : 0) - Math.abs(rise - 30) - slopeAt(x, z) * 40;
+      if (score > best) { best = score; px = x; pz = z; }
+    }
+    const face = Math.atan2(cx - px, cz - pz);
+    teleport(px - Math.sin(face) * 45, pz - Math.cos(face) * 45, face);
+    player.pos.set(px, heightAt(px, pz), pz); player.yaw = face; camYaw = face + Math.PI; camPitch = 0.12; player.crouch = true; placeCrewAround(px - Math.sin(face) * 3, pz - Math.cos(face) * 3);
+    setTimeout(() => { crewLine('spot', (n) => n.crew.id === 'hewitt') || toast('Elk below', 'Herd about 240 m out. Stay low, scope in.', 4); }, 1500); },
+  cruise: () => { teleport(-3353.5, 3743.3, Math.atan2(-3408.3 - -3353.5, 3703.6 - 3743.3), { inTruck: true, speed: 18 }); setTimeout(() => crewLine('ride'), 1500); },
+};
+mapbox.addEventListener('click', (e) => { // fast travel: tap a spot on the map
+  e.stopPropagation(); if (!started) return;
+  const r = mapbox.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width - 0.5) * S, z = ((e.clientY - r.top) / r.height - 0.5) * S;
+  const hit = nearestRoadPoint(x, z, 800); if (!hit) { toast('No road there', 'Tap closer to a road.', 2); return; }
+  const P = hit.r.pts, k = P.indexOf(hit.p), q = P[Math.min(P.length - 1, k + 3)], p0 = P[Math.max(0, k - 3)];
+  teleport(hit.p[0], hit.p[1], Math.atan2(q[0] - p0[0], q[1] - p0[1]), { inTruck: true });
+  $('map').classList.add('hidden'); toast('Fast travel', hit.r.name || 'Back road', 2);
+});
+// trophy wall at HQ
+const boardCanvas = document.createElement('canvas'); boardCanvas.width = 512; boardCanvas.height = 384;
+const boardTex = new THREE.CanvasTexture(boardCanvas); boardTex.colorSpace = THREE.SRGBColorSpace;
+function drawTrophyBoard() {
+  const g = boardCanvas.getContext('2d'); g.fillStyle = '#2a1d12'; g.fillRect(0, 0, 512, 384); g.strokeStyle = '#f08a24'; g.lineWidth = 8; g.strokeRect(4, 4, 504, 376);
+  g.fillStyle = '#f08a24'; g.font = '700 40px Oswald, Impact, sans-serif'; g.textAlign = 'center'; g.fillText('TROPHY WALL', 256, 56);
+  g.textAlign = 'left'; g.font = '600 24px Inter, sans-serif';
+  const top = [...tags].sort((a, b) => (b.points || 0) - (a.points || 0) || b.when - a.when).slice(0, 7);
+  if (!top.length) { g.fillStyle = '#c3b69f'; g.fillText('No tags yet. Go get one.', 40, 120); }
+  top.forEach((t, i) => { g.fillStyle = t.note ? '#e0573b' : '#f6eedf'; g.fillText(`${t.who}: ${t.note ? 'cow elk (wrong elk!)' : `${t.points}x${t.points} ${t.kind === 'elk' ? 'bull elk' : 'mule deer'}`} · ${t.dist} m`, 34, 106 + i * 39); });
+  boardTex.needsUpdate = true; renderTrophyList();
+}
+{ const b = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.4), new THREE.MeshBasicMaterial({ map: boardTex, side: THREE.DoubleSide })); const p = HQ.clone().add(new THREE.Vector3(-14, 0, 2)); b.position.set(p.x, heightAt(p.x, p.z) + 1.9, p.z); b.rotation.y = 1.2 + Math.PI / 2; scene.add(b, (() => { const s2 = box(0.15, 1.4, 0.15, std(0x5a4632)); s2.position.set(p.x, heightAt(p.x, p.z) + 0.6, p.z); return s2; })()); }
+function renderTrophyList() {
+  const el = $('trophyList'); if (!el) return;
+  el.innerHTML = tags.length ? [...tags].reverse().map((t) => `<li><b>${t.who}</b> ${t.note ? 'shot the <em>wrong elk</em>' : `${t.points}x${t.points} ${t.kind === 'elk' ? 'bull elk' : 'mule deer buck'}`} · ${t.dist} m</li>`).join('') : '<li>No tags yet.</li>';
+}
+// photo mode: grab the frame without the HUD, then share or save
+function takePhoto() {
+  const hud = $('hud'); hud.style.visibility = 'hidden'; renderer.render(scene, camera);
+  renderer.domElement.toBlob((blob) => {
+    hud.style.visibility = ''; if (!blob) return;
+    const url = URL.createObjectURL(blob); $('photoImg').src = url; $('photo').classList.remove('hidden');
+    const file = new File([blob], 'roadhunter.jpg', { type: blob.type });
+    $('photoShare').onclick = async () => { try { if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'RoadHunter' }); else { const a = document.createElement('a'); a.href = url; a.download = 'roadhunter.jpg'; a.click(); } } catch {} };
+  }, 'image/jpeg', 0.9);
+}
+
 // ---------------------------------------------------------------- update loop
 const clock = new THREE.Clock();
+let todT = 0, bugleT = 25, banterT = 30, spotT = 1;
 let started = false;
 const fwd = new THREE.Vector3();
 function updatePlayer(dt) {
   const c = player.crew, st = c.stats;
-  if (player.inVehicle) return updateVehicle(player.inVehicle, dt);
+  if (player.inVehicle) { player.model.userData.ch.play('Driving_Loop', 0.2); player.model.userData.ch.mixer.update(dt); return updateVehicle(player.inVehicle, dt); }
   let ix = stick.x + (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), iz = -stick.y + (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
   const mag = clamp(Math.hypot(ix, iz), 0, 1); if (mag < 0.12) { ix = 0; iz = 0; }
   if (scoping) { ix *= 0.3; iz *= 0.3; }
@@ -608,7 +833,8 @@ function updateVehicle(v, dt) {
   if (grade > 0.85 && v.speed > 0) { v.speed *= 0.5; toastOnce('Too steep', 'Even Slime\'s gadgets can\'t climb that.'); }
   else { v.pos.x = clamp(nx, -HALF + 10, HALF - 10); v.pos.z = clamp(nz, -HALF + 10, HALF - 10); }
   placeVehicle(v, Math.min(1, dt * 8));
-  for (const w of v.mesh.children) if (w.geometry && w.geometry.type === 'CylinderGeometry' && w.position.y < 0.6) w.rotation.x += v.speed * dt / 0.45;
+  for (const w of v.wheels) { w.spin.rotation.x += v.speed * dt / v.wheelR; if (w.front) w.pivot.rotation.y = v.steer * 0.9; }
+  emitDust(v, dt);
   player.pos.copy(v.pos);
   $('speed').innerHTML = `${Math.round(Math.abs(v.speed) * 2.237)}<small>mph</small>`;
 }
@@ -650,9 +876,7 @@ function updateAnimals(dt) {
     }
     a.pos.y = heightAt(a.pos.x, a.pos.z);
     a.mesh.position.copy(a.pos); a.mesh.rotation.y = a.heading;
-    const u = a.mesh.userData, ph = performance.now() * 0.001 * (a.speed > 3 ? 11 : 5), amp = a.speed > 3 ? 0.7 : a.speed > 0 ? 0.35 : 0;
-    u.legs.forEach((l, k) => { l.rotation.x = Math.sin(ph + (k % 2 ? Math.PI : 0) + (k > 1 ? 1 : 0)) * amp; });
-    u.head.rotation.x = lerp(u.head.rotation.x, a.state === 'graze' ? 1.0 : a.state === 'alert' ? -0.2 : 0, dt * 3);
+    animateAnimal(a.mesh, a.speed, a.state, dt);
   }
 }
 
@@ -664,14 +888,14 @@ function updateCamera(dt) {
   if (scoping) {
     const st = player.crew.stats, t = performance.now() * 0.001;
     const sway = ((11 - st.aim) * 0.0011 + (1 - player.stamina / 100) * 0.005 + (player.speed > 0 ? 0.006 : 0)) * (player.crouch ? 0.5 : 1);
-    camera.fov = lerp(camera.fov, 9, dt * 10); camera.near = 5; camera.updateProjectionMatrix();
+    camera.fov = lerp(camera.fov, ZOOMS[zoomIdx], dt * 10); camera.near = 5; camera.updateProjectionMatrix();
     camera.position.set(player.pos.x, player.pos.y + (player.crouch ? 1.4 : 1.7), player.pos.z);
     const yaw = camYaw + Math.PI + Math.sin(t * 1.3) * sway, pitch = -camPitch * 0.6 + Math.sin(t * 2.1) * sway * 0.7;
     camera.lookAt(camera.position.x + Math.sin(yaw) * Math.cos(pitch), camera.position.y + Math.sin(pitch), camera.position.z + Math.cos(yaw) * Math.cos(pitch));
     player.model.visible = false;
     return;
   }
-  if (!v) player.model.visible = true;
+  player.model.visible = true;
   camera.fov = lerp(camera.fov, 65, dt * 8); camera.near = 0.2; camera.updateProjectionMatrix();
   const dist = v ? 11 : 4.6, up = v ? 2.2 : 1.6;
   camTarget.set(player.pos.x, player.pos.y + up, player.pos.z);
@@ -688,7 +912,7 @@ function updateHud(dt) {
   toastOnceCd -= dt; for (const k in cds) cds[k] -= dt;
   idleBarkT -= dt; if (idleBarkT < 0) { idleBarkT = rand(40, 70); bark('idle'); }
   let prompt = '';
-  if (!player.inVehicle) { const v = nearestVehicle(); if (v) prompt = `<kbd>F</kbd> drive ${v.name}`; else if (npcs.some((n) => n.model.position.distanceTo(player.pos) < 4)) prompt = '<kbd>E</kbd> talk'; }
+  if (!player.inVehicle) { const v = nearestVehicle(), n = nearestNpc(); if (v) prompt = `<kbd>F</kbd> drive ${v.name}${v.riders ? '' : ''}`; else if (n) prompt = n.mode === 'idle' ? `<kbd>E</kbd> ask ${n.crew.name} to come` : `<kbd>E</kbd> talk to ${n.crew.name}`; }
   $('prompt').innerHTML = prompt; $('prompt').classList.toggle('hidden', !prompt);
   if (scoping) {
     const h = animalUnderCrosshair();
@@ -697,15 +921,22 @@ function updateHud(dt) {
   }
   const elev = Math.round((player.pos.y + BASE) * 3.281);
   const lon = lerp(meta.nw[0], meta.se[0], player.pos.x / S + 0.5), lat = lerp(meta.nw[1], meta.se[1], player.pos.z / S + 0.5);
-  $('place').textContent = `${elev.toLocaleString()} ft · ${lat.toFixed(3)}°N ${Math.abs(lon).toFixed(3)}°W`;
+  const hh = Math.floor(gameHour), mm = Math.floor((gameHour - hh) * 60);
+  $('place').textContent = `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'} · ${elev.toLocaleString()} ft`;
   $('lock').classList.toggle('hidden', touchMode || locked() || dragging || scoping || !started || subT > 0 || player.inVehicle || moved > 0);
   if (!$('map').classList.contains('hidden')) { setDot('me', player.pos.x, player.pos.z); setDot('truck', truck.pos.x, truck.pos.z); setDot('xterra', xterra.pos.x, xterra.pos.z); }
 }
 
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  if (started) { updatePlayer(dt); updateAnimals(dt); updateHud(dt); }
-  for (const n of npcs) { n.model.userData.talkT -= dt; animatePerson(n.model, 0, dt, false, n.model.userData.talkT > 0); }
+  const rdt = Math.min(clock.getDelta(), 0.05); slowT -= rdt; const dt = slowT > 0 ? rdt * 0.25 : rdt;
+  if (started) { updatePlayer(dt); updateAnimals(dt); updateHud(rdt); updateBanter(rdt); gameHour = Math.min(19, gameHour + rdt / 240); }
+  updateNpcs(dt); updateDust(dt);
+  todT -= rdt; if (todT < 0) { todT = 1; applyTimeOfDay(); }
+  if (started) {
+    const v = player.inVehicle;
+    audio.update(rdt, { altitude: player.pos.y, inVehicle: !!v, speed: v ? v.speed : 0, throttle: v ? Math.max(0, (keys.KeyW ? 1 : 0) - stick.y) : 0, onRoadPaved: v ? onPaved(v.pos.x, v.pos.z) : false,
+      footSpeed: player.speed, crouch: player.crouch, waterDist: waterDistAt(player.pos.x, player.pos.z), birdChance: (classify(player.pos.x, player.pos.z) === 'tree' ? 0.75 : 0.25) * (gameHour < 10 ? 1 : 0.5) });
+  }
   for (const v of vehicles) if (v !== player.inVehicle) placeVehicle(v, 1);
   updateCamera(dt);
   refillNear(player.pos.x, player.pos.z);
@@ -729,18 +960,26 @@ function renderCards() {
   for (const b of $('cards').querySelectorAll('.card')) b.onclick = () => { chosen = b.dataset.id; renderCards(); };
 }
 renderCards();
-$('start').onclick = () => {
-  $('menu').classList.add('hidden'); $('hud').classList.remove('hidden');
-  started = true; setCrew(chosen); updateTags();
+function renderWhoComes() {
+  $('comes').innerHTML = CREW.filter((c) => c.id !== chosen).map((c) => `<button class="pick ${followers.has(c.id) ? 'on' : ''}" data-id="${c.id}"><img src="assets/portraits/${c.id}.jpg" alt=""><span>${c.name}</span></button>`).join('');
+  for (const b of $('comes').children) b.onclick = () => { const id = b.dataset.id; followers.has(id) ? followers.delete(id) : followers.add(id); store.set('followers', [...followers]); renderWhoComes(); };
+}
+$('start').onclick = () => { audio.start(); $('menu').classList.add('hidden'); $('where').classList.remove('hidden'); renderWhoComes(); };
+for (const b of document.querySelectorAll('#where .dest')) b.onclick = () => begin(b.dataset.dest);
+function begin(dest) {
+  $('where').classList.add('hidden'); $('hud').classList.remove('hidden'); audio.start();
+  setCrew(chosen); started = true; updateTags(); drawTrophyBoard();
   for (let i = 0; i < 24; i++) spawnHerd('deer');
   for (let i = 0; i < 6; i++) spawnHerd('elk');
-  say(player.crew.name, pick(player.crew.lines.select)); idleBarkT = rand(30, 50);
-  setTimeout(() => toast('Welcome to Salmon', touchMode ? 'Walk to the truck, tap Truck, and go find some animals.' : 'Grab the truck (F) and go find some animals.', 4), 2600);
-};
+  DESTS[dest](); renderCrewBar();
+  if (dest === 'hq') { say(player.crew.name, pick(player.crew.lines.select)); setTimeout(() => toast('Welcome to Salmon', touchMode ? 'Walk to the truck, tap Truck, and go find some animals.' : 'Grab the truck (F) and go find some animals.', 4), 2600); }
+  idleBarkT = rand(30, 50);
+}
+$('trophiesBtn').onclick = () => { renderTrophyList(); $('trophyPanel').classList.toggle('hidden'); };
 // idle menu camera
 player.crew = CREW[0]; player.model = buildPerson(CREW[0]); player.model.visible = false; scene.add(player.model);
 player.pos.y = heightAt(player.pos.x, player.pos.z);
 $('loading').classList.add('hidden');
 frame();
 // test hooks for automated playtesting
-window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; } };
+window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin };
