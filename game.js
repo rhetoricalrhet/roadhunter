@@ -492,7 +492,8 @@ function updateNpcs(dt) {
     if (!scoping && d > 0.8) spd = player.crouch ? 1.25 : d > 10 ? 5.4 : d > 3 ? 3.3 : 1.4;
     if (spd) { const step = Math.min(d, spd * dt); m.position.x += dx / d * step; m.position.z += dz / d * step; n.yaw = angLerp(n.yaw, Math.atan2(dx, dz), dt * 8); }
     else n.yaw = angLerp(n.yaw, player.yaw, dt * 2);
-    m.rotation.y = n.yaw; m.position.y = heightAt(m.position.x, m.position.z);
+    if (inStore(player.pos.x, player.pos.z)) { const [lx, lz] = storeLocal(m.position.x, m.position.z), w = storeWorld(clamp(lx, -6.4, 6.4), clamp(lz, -4.0, 1.6)); m.position.x = w[0]; m.position.z = w[1]; }
+    m.rotation.y = n.yaw; m.position.y = groundAt(m.position.x, m.position.z);
     animatePerson(m, spd, dt, player.crouch || scoping, n.talkT > 0);
   }
 }
@@ -636,6 +637,7 @@ function toggleVehicle() {
 function nearestNpc(r = 4) { let best = null, bd = r; for (const n of npcs) { if (n.mode === 'ride') continue; const d = n.model.position.distanceTo(player.pos); if (d < bd) { bd = d; best = n; } } return best; }
 function talk() {
   if (answerKids()) return;
+  if (nearCounter()) { openShop(); return; }
   const best = nearestNpc();
   if (!best) { if (!player.inVehicle && has('slime') && xterra.pos.distanceTo(player.pos) < 6) openLocker(); return; }
   if (best.mode !== 'idle' && !mission && MISSIONS_FOR[best.crew.id] && !offered.has(best.crew.id)) { offered.add(best.crew.id); startMission(MISSIONS_FOR[best.crew.id]); return; }
@@ -846,7 +848,13 @@ const DESTS = {
     player.pos.set(px, heightAt(px, pz), pz); player.yaw = face; camYaw = face + Math.PI; camPitch = 0.12; player.crouch = true; placeCrewAround(px - Math.sin(face) * 3, pz - Math.cos(face) * 3);
     setTimeout(() => { crewLine('spot', (n) => n.crew.id === 'hewitt') || toast('Elk below', 'Herd about 240 m out. Stay low, scope in.', 4); }, 1500); },
   salmon: () => { teleport(VENTRY.x, VENTRY.z, VENTRY.h + Math.PI, { inTruck: true }); setTimeout(goTown, 300); },
-  amish: () => { teleport(HQ.x - 12, HQ.z + 14, 1.2 + Math.PI, { inTruck: true }); setTimeout(() => { offered.add('dawg'); startMission('amish'); }, 900); },
+  amish: () => { // start on the highway, already rolling, ~15 seconds from the store
+    buildRoute(STORE.x, STORE.z); let best = -1;
+    for (let c = 0; c < RN * RN; c++) if (navField[c] >= 22 && navField[c] <= 28 && roadCells[c] === 2) { best = c; break; }
+    if (best >= 0) { const [x, z] = snapToRoad(cellPos(best % RN, (best / RN) | 0)), P = tracePath(x, z, 8), h = P.length > 4 ? Math.atan2(P[P.length - 1][0] - P[0][0], P[P.length - 1][1] - P[0][1]) : 0;
+      teleport(x, z, h, { inTruck: true, speed: 16 }); }
+    else teleport(HQ.x - 12, HQ.z + 14, 1.2 + Math.PI, { inTruck: true });
+    setTimeout(() => { offered.add('dawg'); startMission('amish'); if (mission) mission.t = 60; }, 600); },
   shortcut: () => { teleport(HQ.x - 12, HQ.z + 14, 1.2 + Math.PI, { inTruck: true }); setTimeout(() => { offered.add('skin'); startMission('shortcut'); }, 900); },
   cruise: () => { teleport(-3353.5, 3743.3, Math.atan2(-3408.3 - -3353.5, 3703.6 - 3743.3), { inTruck: true, speed: 18 }); setTimeout(() => crewLine('ride'), 1500); },
 };
@@ -1009,24 +1017,103 @@ function drawMapRoute() { // yellow route line on the big map
 mapDot('wp', '#ffd34d', 'Target'); mapDot('store', '#5aa0e0', 'Amish store (Baker)');
 mapDots.wp.d.style.display = mapDots.wp.l.style.display = 'none';
 
+
+// ---- the Amish store counter: free treats that give the crew boosts (one of each per visit)
+const SHOP = [
+  { id: 'pie', name: 'Huckleberry pie', desc: 'Whole crew recovers stamina fast for 3 minutes', go() { fx.snack = 180; player.stamina = 100; player.exhausted = false; }, dawg: 'A WHOLE pie. This is the best day of my life.' },
+  { id: 'rolls', name: 'Cinnamon rolls', desc: 'Your special ability is ready right now', go() { ab.cd = 0; }, dawg: 'Still warm. I\'m not sharing.' },
+  { id: 'jerky', name: 'Beef jerky', desc: 'Sprint without getting tired for 1 minute', go() { fx.wind = 60; player.stamina = 100; }, dawg: 'Jerky for the road. Smart. Very smart.' },
+  { id: 'soda', name: 'Glass-bottle root beer', desc: 'Steadier aim for 90 seconds', go() { zyn = { flavor: 'wintergreen', t: 90, max: 90 }; }, dawg: 'Root beer from a glass bottle hits different.' },
+];
+const bought = new Set(); let wasInStore = false, keeperT = 0;
+const nearCounter = () => { if (player.inVehicle) return false; const [lx, lz] = storeLocal(player.pos.x, player.pos.z); return Math.abs(lx) < 3.2 && lz > 0.2 && lz < 2.0; };
+function openShop() {
+  const el = $('shop'); $('shopItems').innerHTML = SHOP.map((it) => `<button data-id="${it.id}" ${bought.has(it.id) ? 'disabled' : ''}><b>${it.name}</b><span>${bought.has(it.id) ? 'Already got one this trip' : it.desc}</span></button>`).join('');
+  for (const b of $('shopItems').children) onTap(b, () => buyItem(b.dataset.id)); el.classList.remove('hidden');
+  say('Shopkeeper', pick(['Welcome. Pies came out of the oven this morning.', 'Good to see you. What can I get you?', 'Huckleberry is the favorite this week.']));
+}
+function buyItem(id) {
+  const it = SHOP.find((q) => q.id === id); if (!it || bought.has(id)) return; bought.add(id); it.go(); audio.chime(); $('shop').classList.add('hidden');
+  toast(it.name, it.desc, 2.8); player.model.userData.ch.play('Interact', 0.15, { once: true });
+  setTimeout(() => (has('dawg') ? say('Dawg', it.dawg) : say(player.crew.name, 'Thank you, sir.')), 900);
+}
+function updateStore(dt) {
+  const inside = !player.inVehicle && inStore(player.pos.x, player.pos.z);
+  if (inside && !wasInStore) { bought.clear(); if (!mission) setTimeout(() => say('Shopkeeper', 'Come on in. Pie\'s at the counter.'), 600); if (has('dawg') && !(mission && mission.id === 'amish')) setTimeout(() => say('Dawg', pick(['Okay. Nobody rush me.', 'I\'ve been waiting all day for this.'])), 2600); }
+  wasInStore = inside;
+  if (STORE_IN.keeper && player.pos.distanceTo(STORE) < 60) { keeperT -= dt; if (keeperT < 0) { keeperT = rand(4, 9); STORE_IN.keeper.play(nearCounter() ? 'Idle_Talking_Loop' : 'Idle_Loop', 0.4); } STORE_IN.keeper.mixer.update(dt); }
+}
 // ---- the Amish store at Baker (real store location, building is a game stand-in)
+const RANCHER = { bodyTex: 'T_Body_hewitt.jpg', skinBoost: 1.15, hair: 'parted', hairColor: 0x8a8278, facialHair: 'beard', facialColor: 0x9a9288, browColor: 0x8a8278, shirt: 0x8a3a30, shirtFabric: 'knit', pants: 0x3e5470, shoes: 0x5a3e28, sleeve: 0.95, collar: true, cap: 0xd9cdb0, brim: 0x6a5232, belly: 0.04 };
+const STORE_IN = { W: 14, D: 9 }; // walk-in Amish store; local frame: -z faces the road (front door)
 const STORE = (() => {
   const hit = nearestRoadPoint(-312, 6285, 300); let x = -312, z = 6285, h = 0;
   if (hit) { const P = hit.r.pts, k = P.indexOf(hit.p), a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)]; h = Math.atan2(b[0] - a[0], b[1] - a[1]); x = hit.p[0] + Math.cos(h) * 20; z = hit.p[1] - Math.sin(h) * 20; }
-  const g = new THREE.Group(), y = heightAt(x, z); g.position.set(x, y, z); g.rotation.y = h + Math.PI / 2; scene.add(g);
-  const wall = std(0xeee6d4), trim = std(0x3e5a3a), roofM = std(0x5b4433), wood = std(0x7a5a3a);
-  g.add(box(14, 4.6, 9, wall, 0, 2.3, 0), box(14.4, 0.25, 9.4, trim, 0, 4.7, 0));
+  const R = h + Math.PI / 2, cR = Math.cos(R), sR = Math.sin(R), W = 14, D = 9;
+  let y = -1e9; for (const [lx, lz] of [[-W / 2, -D / 2], [W / 2, -D / 2], [-W / 2, D / 2], [W / 2, D / 2], [0, 0]]) y = Math.max(y, heightAt(x + lx * cR + lz * sR, z - lx * sR + lz * cR));
+  y += 0.15;
+  const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = R; scene.add(g);
+  Object.assign(STORE_IN, { x, z, y, R, cR, sR, g });
+  const wall = std(0xeee6d4), inner = std(0xd9c7a4), trim = std(0x3e5a3a), roofM = std(0x5b4433), wood = std(0x7a5a3a), plank = std(0x9a7448), dark = std(0x4a3626);
+  // shell with a real doorway (front wall in two pieces + lintel)
+  g.add(box(W, 4.6, 0.25, wall, 0, 2.3, D / 2), box(0.25, 4.6, D, wall, -W / 2, 2.3, 0), box(0.25, 4.6, D, wall, W / 2, 2.3, 0));
+  g.add(box(6.1, 4.6, 0.25, wall, -3.95, 2.3, -D / 2), box(6.1, 4.6, 0.25, wall, 3.95, 2.3, -D / 2), box(1.8, 1.4, 0.25, wall, 0, 3.9, -D / 2));
+  g.add(box(W + 0.4, 0.25, D + 0.4, trim, 0, 4.7, 0));
   const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 6.6, 3, 4, 1), roofM); roof.rotation.y = Math.PI / 4; roof.scale.set(1.55, 1, 1.0); roof.position.y = 6.2; roof.castShadow = true; g.add(roof);
-  g.add(box(14, 0.2, 3, wood, 0, 0.35, -6), box(1.6, 2.6, 0.1, std(0x4a3626), 0, 1.3, -4.52)); // porch + door
-  for (const px of [-6.5, -2, 2, 6.5]) g.add(box(0.18, 3.2, 0.18, wood, px, 1.9, -7.3));
-  g.add(box(14, 0.18, 3.2, roofM, 0, 3.55, -6.1));
-  for (const wx of [-4.5, 4.5]) g.add(box(2, 1.4, 0.1, std(0x9ec3d6, { roughness: 0.2 }), wx, 2.4, -4.52));
+  g.add(box(W - 0.3, 0.12, D - 0.3, plank, 0, 0.06, 0)); // floor
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.3, D - 0.3), new THREE.MeshLambertMaterial({ color: 0xb08a5a, side: THREE.DoubleSide })); ceil.rotation.x = Math.PI / 2; ceil.position.y = 4.55; g.add(ceil);
+  g.add(box(W, 0.2, 3, wood, 0, 0.0, -6)); // porch
+  for (const px of [-6.5, -2, 2, 6.5]) g.add(box(0.18, 3.2, 0.18, wood, px, 1.75, -7.3));
+  g.add(box(W, 0.18, 3.2, roofM, 0, 3.45, -6.1));
+  for (const wx of [-4.5, 4.5]) g.add(box(2, 1.4, 0.1, std(0x9ec3d6, { roughness: 0.2 }), wx, 2.4, -D / 2 - 0.13));
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.3), new THREE.MeshBasicMaterial({ map: textSprite('AMISH STORE', 512, 110, '#3e5a3a'), side: THREE.DoubleSide }));
-  sign.position.set(0, 4.2, -4.6); sign.rotation.y = Math.PI; g.add(sign);
-  for (const bx of [-3.6, -2.4]) g.add(box(0.9, 0.9, 0.9, std(0xd8a04a), bx + 9, 0.45, -6)); // produce crates
+  sign.position.set(0, 4.25, -D / 2 - 0.15); sign.rotation.y = Math.PI; g.add(sign);
+  for (const bx of [-3.6, -2.4]) g.add(box(0.9, 0.9, 0.9, std(0xd8a04a), bx + 9, 0.45, -6)); // produce crates outside
+  // inside: warm light, shelves of jars and bread, quilts, barrels, bakery counter
+  const lamp = new THREE.PointLight(0xffd9a0, 18, 16, 1.6); lamp.position.set(0, 3.8, 0.5); g.add(lamp);
+  const rnd = mulberry32(1693), JAR = [0x9b2c3a, 0x5a2a6b, 0xd9a03a, 0xb8501f, 0x6b8a2a, 0x3a5a9b];
+  const jarGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.17, 10), loafGeo = new THREE.CapsuleGeometry(0.09, 0.18, 4, 8);
+  const shelf = (sx, sz, rot, len) => { const sg = new THREE.Group(); sg.position.set(sx, 0, sz); sg.rotation.y = rot; g.add(sg);
+    sg.add(box(len, 2.1, 0.08, dark, 0, 1.05, 0.22)); for (const sy of [0.35, 0.85, 1.35, 1.85]) { sg.add(box(len, 0.05, 0.45, wood, 0, sy, 0));
+      for (let t = -len / 2 + 0.15; t < len / 2 - 0.1; t += 0.19) { if (sy > 1.6 && rnd() < 0.5) { const l = new THREE.Mesh(loafGeo, std(0xc08a4a)); l.rotation.z = Math.PI / 2; l.position.set(t, sy + 0.1, -0.02); sg.add(l); t += 0.12; continue; }
+        const j = new THREE.Mesh(jarGeo, std(pick(JAR), { roughness: 0.35 })); j.position.set(t, sy + 0.11, -0.05 + (rnd() - 0.5) * 0.12); sg.add(j); const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.072, 0.03, 10), std(0xd9cfa8)); lid.position.set(t, sy + 0.21, j.position.z); sg.add(lid); } } };
+  shelf(-W / 2 + 0.5, -0.8, Math.PI / 2, 4.6); shelf(W / 2 - 0.5, -0.8, -Math.PI / 2, 4.6); shelf(-2.6, -1.2, 0, 3.2); shelf(2.6, -1.2, 0, 3.2);
+  const quilt = (qx, col1, col2) => { const c = document.createElement('canvas'); c.width = c.height = 128; const q2 = c.getContext('2d'); for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { q2.fillStyle = (i + j) % 2 ? col1 : (i * j) % 3 ? col2 : '#efe6d0'; q2.fillRect(i * 16, j * 16, 16, 16); } const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshLambertMaterial({ map: t })); m.position.set(qx, 2.6, D / 2 - 0.15); m.rotation.y = Math.PI; g.add(m); };
+  quilt(-4.8, '#7a2a3a', '#2a4a6b'); quilt(4.8, '#3a5a2a', '#b8862a');
+  for (const [bx, bz] of [[-5.6, 3.4], [5.8, 3.3], [-5.9, -3.3]]) { const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.3, 0.9, 12), std(0x7a5232)); b2.position.set(bx, 0.45, bz); g.add(b2); }
+  // bakery counter + glass case of pies
+  g.add(box(5.4, 1.0, 0.8, wood, 0, 0.5, 2.3), box(5.4, 0.06, 0.9, std(0x5a4030), 0, 1.03, 2.3));
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.55, 0.7), new THREE.MeshStandardMaterial({ color: 0xcfe6f0, transparent: true, opacity: 0.25, roughness: 0.05 })); glass.position.set(-1.1, 1.33, 2.3); g.add(glass);
+  for (let i = 0; i < 4; i++) { const pie = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.08, 16), std(i % 2 ? 0x4a2a5a : 0xc4823a)); pie.position.set(-2.1 + i * 0.66, 1.12, 2.3); g.add(pie); const crust = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.035, 6, 16), std(0xd9a85a)); crust.rotation.x = Math.PI / 2; crust.position.set(-2.1 + i * 0.66, 1.16, 2.3); g.add(crust); }
+  g.add(box(0.5, 0.3, 0.4, std(0x3a3a3a), 1.6, 1.21, 2.3)); // cash register
+  const menu = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.8), new THREE.MeshBasicMaterial({ map: textSprite('FRESH PIES · ROLLS · JERKY', 512, 120, '#3e5a3a') })); menu.position.set(0, 3.3, D / 2 - 0.15); menu.rotation.y = Math.PI; g.add(menu);
   return new THREE.Vector3(x, y, z);
 })();
+// shopkeeper behind the counter
+{
+  const ch = buildCharacter(kit, { ...RANCHER, shirt: 0x3e4f72, shirtFabric: 'knit', pants: 0x1c1c1e, facialHair: 'beard', facialColor: 0x6b4a2e, hairColor: 0x6b4a2e, cap: null, belly: 0.02 });
+  const hi = ch.skeleton.bones.findIndex((b) => b.name === 'Head');
+  if (hi >= 0) { const straw = std(0xd9c48a), hat = new THREE.Group(); const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.015, 24), straw); brim.position.y = 1.76; const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.11, 18), straw); crown.position.y = 1.82; const band = new THREE.Mesh(new THREE.CylinderGeometry(0.122, 0.122, 0.025, 18), std(0x1c1c1c)); band.position.y = 1.78;
+    hat.add(brim, crown, band); hat.position.z = -0.01; const holder = new THREE.Group(); holder.add(hat); holder.applyMatrix4(ch.skeleton.boneInverses[hi]); ch.skeleton.bones[hi].add(holder); }
+  ch.root.position.set(0.4, 0.12, 3.25); ch.root.rotation.y = Math.PI; STORE_IN.g.add(ch.root); ch.play('Idle_Loop', 0); STORE_IN.keeper = ch;
+}
+const storeLocal = (x, z) => { const dx = x - STORE_IN.x, dz = z - STORE_IN.z; return [dx * STORE_IN.cR - dz * STORE_IN.sR, dx * STORE_IN.sR + dz * STORE_IN.cR]; };
+const storeWorld = (lx, lz) => [STORE_IN.x + lx * STORE_IN.cR + lz * STORE_IN.sR, STORE_IN.z - lx * STORE_IN.sR + lz * STORE_IN.cR];
+function inStore(x, z, pad = 0) { const [lx, lz] = storeLocal(x, z); return Math.abs(lx) < STORE_IN.W / 2 - pad && Math.abs(lz) < STORE_IN.D / 2 - pad; }
+function groundAt(x, z) { return inStore(x, z, -0.2) ? STORE_IN.y + 0.12 : heightAt(x, z); }
+// keep walkers out of the walls: only the doorway lets you cross
+function storeCollide(ox, oz, nx, nz) {
+  const [ax, az] = storeLocal(ox, oz), [bx, bz] = storeLocal(nx, nz), W2 = STORE_IN.W / 2, D2 = STORE_IN.D / 2, m = 0.35;
+  const insA = Math.abs(ax) < W2 && Math.abs(az) < D2, insB = Math.abs(bx) < W2 + m && Math.abs(bz) < D2 + m;
+  if (!insA && !insB) return null;
+  const door = Math.abs(bx) < 0.75 && bz < -D2 + 1.2;
+  if (insA) { if (door) return null; const cx2 = clamp(bx, -W2 + m, W2 - m), cz2 = clamp(bz, -D2 + m, D2 - m); if (cx2 === bx && cz2 === bz) return null; return storeWorld(cx2, cz2); }
+  if (door && Math.abs(bx) < 0.75) return null;
+  return [ox, oz]; // bumped the outside wall
+}
 setDot('store', STORE.x, STORE.z);
+
 
 // ---- Zyn tins (12 hidden around the map; Hewitt gets double time and never burns his lip)
 const FLAVORS = {
@@ -1126,7 +1213,6 @@ function smallTalk() {
   return true;
 }
 let rancher = null, rancherT = 0, tipFor = null;
-const RANCHER = { bodyTex: 'T_Body_hewitt.jpg', skinBoost: 1.15, hair: 'parted', hairColor: 0x8a8278, facialHair: 'beard', facialColor: 0x9a9288, browColor: 0x8a8278, shirt: 0x8a3a30, shirtFabric: 'knit', pants: 0x3e5470, shoes: 0x5a3e28, sleeve: 0.95, collar: true, cap: 0xd9cdb0, brim: 0x6a5232, belly: 0.04 };
 function snackBreak() {
   fx.snack = 45; player.stamina = 100; player.exhausted = false;
   say('Dawg', pick(['Sandwiches. You\'re welcome.', 'Everybody eat. That\'s an order.', 'I packed extra. Obviously.']));
@@ -1204,7 +1290,9 @@ function updateMission(dt) {
   mission.t -= dt;
   const m = mission, d = Math.hypot(m.target.x - player.pos.x, m.target.z - player.pos.z), slow = !player.inVehicle || Math.abs(player.inVehicle.speed) < 3;
   if (m.id === 'amish') {
-    if (d < 30 && slow) {
+    if (!m.arrived && d < 45) { m.arrived = true; m.line = 'Park it and head inside with Dawg'; { const w = storeWorld(0, -STORE_IN.D / 2 - 1); m.target = new THREE.Vector3(w[0], 0, w[1]); } partyLine('dawg', ['We made it! Come on, come on.', 'Park anywhere. I\'m going in.'], 600); }
+    if (m.arrived) m.t = Math.max(m.t, 1);
+    if (m.arrived && !player.inVehicle && inStore(player.pos.x, player.pos.z)) {
       const left = m.t; fx.snack = 90; player.stamina = 100;
       finishMission(true, ['Dawg', pick(['Huckleberry pie. Worth every mile.', 'Cinnamon rolls for the whole truck. You\'re welcome.', 'Okay. NOW I can hunt.'])]);
       setTimeout(() => { crewLine('idle', (n) => n.crew.id === 'skin'); toast('Snack pack', `Everyone recovers stamina fast for 90 s${left > 120 ? ' · Early bird bonus' : ''}`, 3.4); }, 4200);
@@ -1242,7 +1330,7 @@ function updatePowers(dt, t) {
   if (tipFor && !mission && (tipFor.state === 'down' || tipFor.pos.distanceTo(player.pos) < 60)) { tipFor = null; setWaypoint(null); }
   else if (tipFor && !mission && waypoint) { waypoint.x = tipFor.pos.x; waypoint.z = tipFor.pos.z; beam.position.set(tipFor.pos.x, heightAt(tipFor.pos.x, tipFor.pos.z) + 130, tipFor.pos.z); setDot('wp', waypoint.x, waypoint.z); }
   beam.material.opacity = 0.18 + Math.sin(t * 3) * 0.08;
-  updateTins(dt, t); updateThermal(); updateMission(dt); updateKids(dt); drawAdvantage(dt); updateNav(dt);
+  updateStore(dt); updateTins(dt, t); updateThermal(); updateMission(dt); updateKids(dt); drawAdvantage(dt); updateNav(dt);
   // HUD: ability button + active effects
   const c = player.crew, el = $('abil'), pct = ab.cd > 0 ? (1 - ab.cd / ab.max) * 100 : 100;
   el.style.setProperty('--p', pct + '%'); el.classList.toggle('ready', ab.cd <= 0);
@@ -1671,9 +1759,11 @@ function updatePlayer(dt) {
   if (sprint) { if (!noDrain()) player.stamina -= (5 + (10 - st.stamina) * 3.2) * dt; }
   else player.stamina += (4 + st.stamina * 1.6) * (moving ? 0.6 : 1) * regenMul() * dt;
   player.stamina = clamp(player.stamina, 0, 100);
+  const ox = player.pos.x, oz = player.pos.z;
   player.pos.x = clamp(player.pos.x + mx * spd * dt, AX0, AX1);
   player.pos.z = clamp(player.pos.z + mz * spd * dt, AZ0, AZ1);
-  const g = heightAt(player.pos.x, player.pos.z);
+  const sc = storeCollide(ox, oz, player.pos.x, player.pos.z); if (sc) { player.pos.x = sc[0]; player.pos.z = sc[1]; }
+  const g = groundAt(player.pos.x, player.pos.z);
   if (keys.Space && player.onGround) { player.vy = 5.2; player.onGround = false; }
   player.vy -= 18 * dt; player.pos.y += player.vy * dt;
   if (player.pos.y <= g) { player.pos.y = g; player.vy = 0; player.onGround = true; }
@@ -1774,10 +1864,11 @@ function updateCamera(dt) {
     camPos.set(player.pos.x + Math.sin(t) * 90, player.pos.y + 170, player.pos.z + Math.cos(t) * 90); camera.position.lerp(camPos, Math.min(1, dt * 2)); camera.lookAt(player.pos.x - Math.sin(t) * 120, player.pos.y, player.pos.z - Math.cos(t) * 120); return;
   }
   camera.fov = lerp(camera.fov, 65, dt * 8); camera.near = 0.2; camera.updateProjectionMatrix();
-  const dist = v ? 11 : 4.6, up = v ? 2.2 : 1.6;
+  const indoors = !v && inStore(player.pos.x, player.pos.z), dist = v ? 11 : indoors ? 2.6 : 4.6, up = v ? 2.2 : 1.6;
   camTarget.set(player.pos.x, player.pos.y + up, player.pos.z);
   camPos.set(camTarget.x + Math.sin(camYaw) * Math.cos(camPitch) * dist, camTarget.y + Math.sin(camPitch) * dist, camTarget.z + Math.cos(camYaw) * Math.cos(camPitch) * dist);
-  const floor = heightAt(camPos.x, camPos.z) + 0.6; if (camPos.y < floor) camPos.y = floor;
+  if (indoors) { const [lx, lz] = storeLocal(camPos.x, camPos.z), w = storeWorld(clamp(lx, -6.6, 6.6), clamp(lz, -4.2, 4.2)); camPos.x = w[0]; camPos.z = w[1]; camPos.y = Math.min(camPos.y, STORE_IN.y + 4.1); }
+  const floor = groundAt(camPos.x, camPos.z) + 0.6; if (camPos.y < floor) camPos.y = floor;
   camera.position.lerp(camPos, Math.min(1, dt * (v ? 8 : 14)));
   camera.lookAt(camTarget);
   if (fx.burn > 0) { camera.rotation.z += Math.sin(performance.now() * 0.05) * 0.012; camera.rotation.x += Math.sin(performance.now() * 0.071) * 0.008; }
@@ -1791,6 +1882,7 @@ function updateHud(dt) {
   idleBarkT -= dt; if (idleBarkT < 0) { idleBarkT = rand(40, 70); bark('idle'); }
   let prompt = '';
   if (!player.inVehicle) { const v = nearestVehicle(), n = nearestNpc(); if (v) prompt = `<kbd>F</kbd> drive ${v.name}${v.riders ? '' : ''}`; else if (n) prompt = n.mode === 'idle' ? `<kbd>E</kbd> ask ${n.crew.name} to come` : (!mission && MISSIONS_FOR[n.crew.id] && !offered.has(n.crew.id)) ? `<kbd>E</kbd> ${n.crew.name} has a request` : `<kbd>E</kbd> talk to ${n.crew.name}`; else if (has('slime') && xterra.pos.distanceTo(player.pos) < 6) prompt = '<kbd>E</kbd> open Slime\'s gear locker'; }
+  if (nearCounter()) prompt = touchMode ? 'Tap Talk to shop' : '<kbd>E</kbd> shop at the counter';
   if (kidsRing > 0) prompt = '<kbd>E</kbd> silence Kyle\'s phone!';
   $('prompt').innerHTML = prompt; $('prompt').classList.toggle('hidden', !prompt);
   if (scoping) {
@@ -1866,4 +1958,6 @@ player.pos.y = heightAt(player.pos.x, player.pos.z);
 $('loading').classList.add('hidden');
 frame();
 // test hooks for automated playtesting
-window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, goTown, goValley, get area() { return area; }, TOWN, get nav() { return { on: navOn, path: navPath.length, chev: chevs.filter((c) => c.visible).length, first: chevs.slice(0, 3).map((c) => [c.position.x, c.position.y, c.position.z].map(Math.round)), p0: navPath.slice(0, 2), me: [player.pos.x, player.pos.y, player.pos.z].map(Math.round) }; }, chevs, scene, teleport, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
+window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, STORE_IN, storeWorld, inStore, openShop, buyItem, goTown, goValley, get area() { return area; }, TOWN, get nav() { return { on: navOn, path: navPath.length, chev: chevs.filter((c) => c.visible).length, first: chevs.slice(0, 3).map((c) => [c.position.x, c.position.y, c.position.z].map(Math.round)), p0: navPath.slice(0, 2), me: [player.pos.x, player.pos.y, player.pos.z].map(Math.round) }; }, chevs, scene, teleport, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
+
+onTap($('shopClose'), () => $('shop').classList.add('hidden'));
