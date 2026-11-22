@@ -297,6 +297,41 @@ function textSprite(text, w = 512, h = 128, bg = '#2a1d12', fg = '#f4ecdc') {
   sign.position.set(-9, lift + 2.6, 10); hq.add(sign, box(0.15, 2.6, 0.15, std(0x5a4632), -10.7, lift + 1.1, 10), box(0.15, 2.6, 0.15, std(0x5a4632), -7.3, lift + 1.1, 10));
 }
 
+// ---- the real property: trees from the 2023 USGS aerial (tamarack turning gold, firs, cottonwoods on the creek) + the Quonset
+{
+  const T = [[-3218.9,3457.2,0],[-3169.6,3452.8,0],[-3198.9,3532.7,0],[-3241.0,3545.0,0],[-3177.4,3438.2,0],[-3132.9,3482.1,0],[-3209.1,3434.8,0],[-3164.2,3445.0,0],[-3119.6,3460.6,0],[-3158.7,3485.5,0],[-3211.8,3448.7,0],[-3201.2,3395.7,0],[-3190.7,3418.8,0],[-3190.4,3448.4,0],[-3139.4,3478.7,0],[-3226.1,3495.3,0],[-3215.5,3437.9,0],[-3170.3,3450.4,0],[-3203.3,3517.4,0],[-3239.3,3443.3,0],[-3187.0,3498.0,0],[-3197.8,3408.6,0],[-3216.9,3453.8,0],[-3210.1,3525.9,0],[-3163.5,3447.4,0],[-3173.0,3437.9,0],[-3157.7,3442.3,0],[-3246.8,3530.7,0],[-3142.1,3493.3,0],[-3206.0,3483.8,0],[-3221.0,3435.5,0],[-3231.5,3439.2,0],[-3193.8,3471.9,0],[-3194.4,3402.8,0],[-3194.4,3417.8,0],[-3234.6,3511.6,0],[-3207.0,3432.4,0],[-3202.3,3420.5,0],[-3212.5,3459.6,0],[-3193.4,3493.3,0],[-3211.8,3461.0,0],[-3127.1,3472.5,0],[-3140.7,3483.4,0],[-3178.8,3451.8,0],[-3208.0,3493.3,0],[-3164.9,3486.8,0],[-3154.7,3487.8,0],[-3206.7,3456.9,0],[-3216.9,3450.4,0],[-3195.8,3427.7,0],[-3236.6,3432.4,0],[-3161.8,3451.8,0],[-3209.1,3527.3,0],[-3159.8,3481.4,0],[-3177.8,3456.2,0],[-3180.8,3535.8,0],[-3207.7,3502.8,0],[-3217.6,3437.5,0],[-3230.1,3510.6,0],[-3222.3,3430.7,0],[-3152.3,3444.3,0],[-3120.3,3454.2,0],[-3207.4,3431.4,0],[-3187.6,3424.3,0],[-3207.4,3472.2,0],[-3157.4,3489.5,0],[-3165.9,3494.6,0],[-3223.7,3500.4,0],[-3155.7,3461.3,0],[-3200.6,3417.1,0],[-3221.0,3431.7,0],[-3192.4,3493.6,0],[-3242.0,3441.6,0],[-3153.0,3506.9,0],[-3206.0,3461.3,0],[-3156.4,3496.0,0],[-3198.9,3484.1,0],[-3244.4,3520.8,0],[-3187.6,3481.7,0],[-3241.4,3546.7,0],[-3168.3,3450.4,0],[-3206.3,3412.0,0],[-3166.9,3453.2,0],[-3127.8,3454.2,0],[-3202.3,3455.2,0],[-3248.8,3535.8,0],[-3197.5,3458.9,0],[-3141.1,3455.9,0],[-3229.5,3437.5,0],[-3201.2,3505.2,0],[-3212.1,3454.5,0],[-3182.5,3520.5,0],[-3245.4,3528.6,0],[-3149.9,3496.3,0],[-3162.8,3517.4,0],[-3215.2,3464.0,0],[-3202.3,3484.4,0],[-3181.2,3450.8,0],[-3194.8,3461.0,0],[-3206.0,3487.5,0],[-3234.9,3435.1,0],[-3153.3,3489.2,0],[-3187.0,3440.2,0],[-3179.5,3452.8,0],[-3184.9,3445.3,0],[-3145.1,3475.6,0],[-3201.9,3491.6,0],[-3213.5,3446.0,0],[-3202.9,3518.1,0],[-3149.9,3458.6,0],[-3210.1,3471.9,0],[-3217.9,3447.4,0],[-3119.0,3457.2,0],[-3182.2,3443.3,0],[-3211.4,3477.0,0],[-3202.6,3427.7,0],[-3207.4,3404.5,0],[-3204.3,3420.5,0],[-3139.4,3456.2,0],[-3200.6,3474.9,0],[-3222.3,3433.4,0],[-3185.6,3433.8,0],[-3202.3,3457.6,0],[-3207.0,3441.6,0],[-3195.8,3424.6,0],[-3170.6,3405.9,0],[-3195.1,3503.8,0],[-3200.2,3498.4,0],[-3197.5,3442.6,0],[-3187.6,3499.1,0],[-3159.4,3446.7,0],[-3185.3,3417.5,0],[-3198.9,3441.3,0],[-3181.9,3438.2,0],[-3175.7,3436.5,0],[-3222.3,3493.6,0],[-3200.2,3400.5,0],[-3242.4,3476.3,0],[-3221.6,3520.8,0],[-3249.9,3541.2,0],[-3245.8,3525.6,0],[-3193.4,3407.6,0],[-3228.1,3441.6,0],[-3183.6,3499.4,0],[-3210.4,3459.6,0],[-3209.1,3482.7,0],[-3230.5,3431.7,0],[-3197.8,3469.8,0],[-3201.2,3473.9,0],[-3197.2,3416.1,0],[-3130.5,3449.8,0],[-3130.9,3464.4,0],[-3196.1,3529.7,0],[-3207.4,3494.6,0],[-3193.1,3487.8,0],[-3145.1,3474.6,0],[-3135.6,3478.7,0],[-3147.9,3461.7,0],[-3162.5,3492.6,0],[-3189.0,3482.4,0],[-3222.0,3519.1,0],[-3163.2,3494.3,0],[-3208.4,3439.9,0],[-3240.7,3545.6,0],[-3139.7,3486.1,0],[-3150.6,3460.3,0],[-3198.2,3407.3,0],[-3208.7,3494.0,0],[-3141.1,3484.8,0],[-3133.9,3449.8,0],[-3218.9,3462.7,0],[-3193.1,3403.2,0],[-3222.7,3504.2,0],[-3202.9,3440.2,0],[-3202.9,3452.1,0],[-3210.8,3469.1,0],[-3206.3,3512.3,0],[-3229.8,3435.1,0],[-3217.2,3446.0,0],[-3195.1,3533.1,0],[-3153.0,3480.7,0],[-3131.9,3465.1,0],[-3213.1,3473.9,0],[-3158.7,3415.8,0],[-3244.1,3524.9,0],[-3206.3,3465.7,0],[-3171.7,3436.5,0],[-3143.8,3433.4,0],[-3199.2,3468.1,0],[-3192.7,3494.0,0],[-3198.5,3441.9,0],[-3201.6,3464.0,0],[-3201.6,3408.3,0],[-3213.1,3465.7,0],[-3169.3,3445.3,0],[-3237.6,3431.1,0],[-3175.1,3449.4,0],[-3250.2,3541.6,0],[-3189.3,3438.5,0],[-3160.1,3415.8,0],[-3169.6,3445.7,0],[-3206.7,3403.2,0],[-3116.9,3459.6,0],[-3250.5,3541.9,0],[-3122.4,3458.6,0],[-3217.6,3455.2,0],[-3193.8,3494.3,0],[-3181.2,3435.1,0],[-3198.2,3498.7,0],[-3173.7,3488.5,0],[-3202.6,3436.2,0],[-3158.4,3417.8,0],[-3233.2,3431.7,0],[-3222.0,3456.6,0],[-3173.4,3458.9,0],[-3201.9,3517.1,0],[-3140.7,3454.9,0],[-3164.9,3493.6,0],[-3204.3,3449.1,0],[-3249.5,3450.1,0],[-3144.1,3436.8,0],[-3157.7,3453.8,0],[-3193.1,3410.0,0],[-3146.2,3474.2,0],[-3193.8,3488.9,0],[-3203.3,3398.4,0],[-3183.6,3481.4,0],[-3138.7,3469.5,0],[-3243.1,3480.0,0],[-3189.3,3441.6,0],[-3186.3,3418.1,0],[-3205.0,3489.2,0],[-3213.5,3475.3,0],[-3208.4,3503.8,0],[-3176.1,3443.3,0],[-3221.6,3493.6,0],[-3162.1,3517.8,0],[-3197.5,3440.9,0],[-3164.9,3438.9,0],[-3141.1,3483.1,0],[-3207.7,3484.4,0],[-3215.5,3497.0,0],[-3237.3,3441.3,0],[-3208.0,3441.6,0],[-3240.3,3546.3,0],[-3141.7,3469.5,0],[-3221.6,3494.0,0],[-3193.1,3532.4,0],[-3202.9,3414.7,0],[-3160.1,3487.8,0],[-3207.7,3404.5,0],[-3116.2,3460.6,0],[-3202.6,3426.6,0],[-3154.3,3461.7,0],[-3195.5,3503.1,0],[-3145.8,3475.3,0],[-3153.6,3441.3,0],[-3155.3,3423.9,0],[-3236.3,3510.3,0],[-3227.1,3495.7,0],[-3226.4,3440.2,0],[-3207.7,3430.7,0],[-3202.6,3517.8,0],[-3139.4,3440.9,0],[-3216.9,3519.1,0],[-3224.4,3488.2,0],[-3142.4,3494.0,0],[-3221.6,3500.8,0],[-3222.0,3455.5,0],[-3241.7,3441.3,0],[-3188.3,3490.6,0],[-3141.1,3455.2,0],[-3240.7,3475.6,0],[-3210.1,3508.2,0],[-3135.3,3460.3,0],[-3154.0,3494.0,0],[-3262.9,3585.1,1],[-3267.6,3581.0,1],[-3263.9,3575.3,1],[-3266.3,3571.8,1],[-3273.7,3567.8,1],[-3267.2,3563.5,1],[-3269.4,3557.4,1],[-3264.3,3553.3,1],[-3267.0,3549.1,1],[-3263.6,3544.0,1],[-3261.6,3536.9,1],[-3260.2,3534.2,1],[-3257.7,3527.3,1],[-3247.3,3529.9,1],[-3246.7,3524.7,1],[-3241.0,3525.0,1],[-3234.6,3522.4,1],[-3229.8,3519.8,1],[-3226.7,3521.5,1],[-3218.5,3518.6,1],[-3216.0,3522.7,1],[-3211.1,3523.0,1],[-3202.9,3523.3,1],[-3200.5,3526.9,1],[-3198.0,3536.0,1],[-3196.8,3538.1,1],[-3227.0,3581.7,1],[-3224.6,3587.1,1],[-3222.2,3592.6,1],[-3219.9,3598.0,1]]; // [x, z, 0 = creek grove | 1 = yard windbreak]
+  const rnd = mulberry32(1958), N = T.length;
+  const tamGeo = new THREE.ConeGeometry(1, 1, 8); tamGeo.translate(0, 0.5, 0);
+  const firGeo = new THREE.ConeGeometry(1, 1, 7); firGeo.translate(0, 0.5, 0);
+  const cotGeo = new THREE.IcosahedronGeometry(1, 1); cotGeo.scale(1, 0.85, 1);
+  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.2, 1, 6); trunkGeo.translate(0, 0.5, 0);
+  const mk = (geo, mat, n) => { const m = new THREE.InstancedMesh(geo, mat, n); m.castShadow = true; m.receiveShadow = true; m.count = 0; scene.add(m); return m; };
+  const tam = mk(tamGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), N), fir = mk(firGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), N), cot = mk(cotGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), N);
+  const trunks = mk(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x5a4330 }), N * 2), bush = mk(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), N);
+  const d = new THREE.Object3D(), c = new THREE.Color();
+  const put = (mesh, x, y, z, sx, sy, col) => { d.position.set(x, y, z); d.rotation.set(0, rnd() * 6.28, 0); d.scale.set(sx, sy, sx); d.updateMatrix(); mesh.setMatrixAt(mesh.count, d.matrix); mesh.setColorAt(mesh.count, col); mesh.count++; };
+  for (const [x, z, yard] of T) {
+    const y = heightAt(x, z) - 0.2, r = rnd(), kind = yard ? (r < 0.8 ? 'tam' : 'fir') : (r < 0.45 ? 'tam' : r < 0.7 ? 'fir' : 'cot');
+    if (kind === 'tam') { const h = 13 + rnd() * 9; put(trunks, x, y, z, 1.2, h * 0.35, c.set(0x5a4330)); put(tam, x, y + h * 0.18, z, 1.6 + rnd() * 0.7, h * 0.85, c.setHSL(0.11 + rnd() * 0.03, 0.62 + rnd() * 0.15, 0.44 + rnd() * 0.1)); }
+    else if (kind === 'fir') { const h = 11 + rnd() * 9; put(trunks, x, y, z, 1.2, h * 0.25, c.set(0x4a3626)); put(fir, x, y + h * 0.12, z, 2.2 + rnd() * 0.8, h * 0.9, c.setHSL(0.3 + rnd() * 0.04, 0.32, 0.17 + rnd() * 0.06)); }
+    else { const h = 9 + rnd() * 6; put(trunks, x, y, z, 2.2, h * 0.55, c.set(0x6a5644)); put(cot, x, y + h * 0.7, z, 3.5 + rnd() * 1.5, (3.5 + rnd() * 1.5) * 0.9, c.setHSL(0.13 + rnd() * 0.04, 0.55, 0.42 + rnd() * 0.1)); }
+    if (!yard && rnd() < 0.6) { const bx = x + (rnd() - 0.5) * 8, bz = z + (rnd() - 0.5) * 8, s2 = 1 + rnd() * 1.4; put(bush, bx, heightAt(bx, bz) - 0.2, bz, s2, s2 * 0.75, c.setHSL(0.09 + rnd() * 0.12, 0.4, 0.3 + rnd() * 0.08)); }
+  }
+  for (const m of [tam, fir, cot, trunks, bush]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; m.computeBoundingSphere(); }
+  // Quonset hut (galvanized half-pipe shop) where the aerial shows a long light building NE of the house
+  const q = new THREE.Group(), qx = HQ.x + 9.5, qz = HQ.z - 29.6; q.position.set(qx, heightAt(qx, qz) - 0.1, qz); q.rotation.y = 0.885; scene.add(q);
+  const corr = (() => { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const g = cv.getContext('2d'); for (let i = 0; i < 256; i++) { const v = 150 + Math.sin(i / 256 * Math.PI * 2 * 32) * 38; g.fillStyle = `rgb(${v},${v + 3},${v + 6})`; g.fillRect(i, 0, 1, 64); } const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const R0 = 5, LEN = 16, metal = new THREE.MeshStandardMaterial({ map: corr, color: 0xd6d9dc, metalness: 0.55, roughness: 0.42, side: THREE.DoubleSide });
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(R0, R0, LEN, 40, 1, true, -Math.PI / 2, Math.PI), metal); shell.rotation.z = Math.PI / 2; shell.rotation.y = 0; shell.position.y = 0; shell.castShadow = shell.receiveShadow = true;
+  const holder = new THREE.Group(); holder.rotation.y = Math.PI / 2; holder.add(shell); q.add(holder); // axis along local z
+  const endMat = new THREE.MeshStandardMaterial({ color: 0xb8bbbd, metalness: 0.4, roughness: 0.5, side: THREE.DoubleSide });
+  for (const sgn of [1, -1]) {
+    const wall = new THREE.Mesh(new THREE.CircleGeometry(R0, 40, 0, Math.PI), endMat); wall.position.z = sgn * LEN / 2; wall.castShadow = true; q.add(wall);
+    if (sgn > 0) { q.add(box(4.2, 3.6, 0.15, std(0x6b6e70, { metalness: 0.5, roughness: 0.5 }), 0, 1.8, LEN / 2 + 0.05)); for (let k = 0; k < 9; k++) q.add(box(4.2, 0.05, 0.18, std(0x4e5153), 0, 0.2 + k * 0.4, LEN / 2 + 0.08)); // roll-up door
+      q.add(box(0.9, 2.1, 0.12, std(0x3b3f42), 3.2, 1.05, LEN / 2 + 0.05)); }
+  }
+  q.add(box(LEN * 0.0 + 11, 0.12, 16.6, std(0x8d8a84), 0, 0.02, 0)); // slab
+}
 // ---------------------------------------------------------------- people
 // Animated crew (Quaternius CC0 base + generated clothes, see chars.js)
 const rifleMats = { wood: std(0x6b4527, { roughness: 0.6 }), metal: std(0x222326, { metalness: 0.8, roughness: 0.35 }) };
@@ -1438,6 +1473,40 @@ function updateEncounters(dt) {
 }
 function forceEncounter(k) { if (enc.active) { enc.active.end(); enc.active = null; } enc.last = k; enc.active = ENCOUNTERS[k].start(); enc.active.name = k; }
 
+// ---- Eagle Valley ranch headquarters (footprints traced from the 2023 USGS aerial; buildings are game stand-ins)
+{
+  const px = (u, v) => [1880 + (u - 500) * 0.7, -1620 + (v - 500) * 0.7]; // aerial pixel -> world
+  function ranchBuilding(u, v, len, wid, h, heading, wall, roof, o = {}) {
+    const [x, z] = px(u, v), g = new THREE.Group(); g.position.set(x, heightAt(x, z) - 0.15, z); g.rotation.y = heading; scene.add(g);
+    g.add(box(wid, h, len, std(wall), 0, h / 2, 0));
+    const rh = o.flat ? 0.4 : wid * 0.32, sh = new THREE.Shape(); sh.moveTo(-wid / 2 - 0.4, 0); sh.lineTo(wid / 2 + 0.4, 0); sh.lineTo(0, rh); sh.closePath();
+    const rg = new THREE.ExtrudeGeometry(sh, { depth: len + 0.8, bevelEnabled: false }); rg.translate(0, 0, -(len + 0.8) / 2);
+    const r = new THREE.Mesh(rg, std(roof, { metalness: o.metal ? 0.5 : 0, roughness: o.metal ? 0.45 : 0.85 })); r.position.y = h; r.castShadow = r.receiveShadow = true; g.add(r);
+    if (o.door) g.add(box(Math.min(5, wid * 0.4), Math.min(4.2, h * 0.75), 0.15, std(0x4a4440), 0, Math.min(4.2, h * 0.75) / 2, len / 2 + 0.05));
+    if (o.windows) for (const sx of [-1, 1]) for (const zz of [-len * 0.25, len * 0.25]) g.add(box(0.12, 1.2, 1.6, std(0x8fb3c7, { roughness: 0.2 }), sx * (wid / 2 + 0.05), h * 0.55, zz));
+    if (o.porch) g.add(box(wid + 0.2, 0.2, 2.6, std(0x6a5440), 0, 0.3, len / 2 + 1.3), box(wid + 0.6, 0.15, 3, std(roof), 0, h * 0.8, len / 2 + 1.4));
+    return g;
+  }
+  ranchBuilding(370, 725, 44, 16, 6.5, 2.245, 0xc9c4b6, 0x5f7d6a, { metal: true, door: true });        // big green-roof shop
+  ranchBuilding(307, 748, 20, 12, 4.6, 2.11, 0xe8e2d4, 0xdad9d4, { windows: true, porch: true });      // white ranch house
+  ranchBuilding(245, 768, 14, 10, 4.2, 2.11, 0xb8a58a, 0x4a4038, { windows: true });                   // small house
+  ranchBuilding(250, 330, 18, 12, 4.6, 2.5, 0xa89272, 0x6b5a48, { windows: true, porch: true });       // upper house
+  ranchBuilding(343, 390, 12, 7, 3, 2.5, 0xdfe8e4, 0xd8e6e2, { metal: true });                          // greenhouse
+  ranchBuilding(350, 840, 10, 10, 4, 2.6, 0xd8d6d0, 0xc8c8c4, { metal: true, door: true });            // white shed
+  ranchBuilding(297, 893, 16, 10, 6, 2.55, 0x8a4a32, 0x5a3a2a, { door: true });                        // barn
+  ranchBuilding(307, 932, 20, 12, 6.5, 2.55, 0x7a3e2a, 0x4e3a30, { door: true, metal: true });         // big barn
+  // corral fence next to the barns
+  const [cx, cz] = px(345, 905), rail = std(0x6b5a44), C = 16;
+  for (let k = 0; k < 4; k++) { const a = 2.55 + k * Math.PI / 2; for (let t = -C; t <= C; t += 4) { const fx = Math.sin(a), fz = Math.cos(a), lx = Math.cos(a), lz = -Math.sin(a), x = cx + fx * C + lx * t, z = cz + fz * C + lz * t; scene.add(box(0.18, 1.5, 0.18, rail, x, heightAt(x, z) + 0.75, z)); }
+    for (const y of [0.6, 1.2]) { const x = cx + Math.sin(a) * C, z = cz + Math.cos(a) * C, b = box(0.08, 0.1, C * 2, rail); b.position.set(x, heightAt(x, z) + y, z); b.rotation.y = a + Math.PI / 2; scene.add(b); } }
+  // the cattle herd in the pasture (grazing, not huntable)
+  const rnd = mulberry32(77);
+  for (let i = 0; i < 22; i++) { const [x, z] = px(560 + rnd() * 160, 800 + rnd() * 130), m = buildCow(); m.position.set(x, heightAt(x, z), z); m.rotation.y = rnd() * 6.28; scene.add(m); for (let k = 0; k < 20; k++) animateAnimal(m, 0, 'graze', 0.1); }
+  // ranch sign at the turn-in
+  const [sx, sz] = px(430, 640), sg = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1), new THREE.MeshBasicMaterial({ map: textSprite('EAGLE VALLEY RANCH'), side: THREE.DoubleSide }));
+  sg.position.set(sx, heightAt(sx, sz) + 2.6, sz); sg.rotation.y = 2.245; scene.add(sg); for (const o of [-2, 2]) scene.add(box(0.22, 3, 0.22, std(0x5a4632), sx + Math.cos(2.245) * o, heightAt(sx, sz) + 1.5, sz - Math.sin(2.245) * o));
+}
+mapDot('evhq', '#c9c4b6', 'Ranch HQ'); setDot('evhq', 1789, -1462);
 // ---------------------------------------------------------------- update loop
 const clock = new THREE.Clock();
 let todT = 0, bugleT = 25, banterT = 30, spotT = 1;
