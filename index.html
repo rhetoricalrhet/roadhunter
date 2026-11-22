@@ -185,6 +185,11 @@ body.touch #advLbl{width:110px;top:calc(205px + env(safe-area-inset-top,0px));ri
 body.touch #ammo{bottom:calc(150px + env(safe-area-inset-bottom,0px));right:max(14px,env(safe-area-inset-right,0px));padding:5px 8px}
 @media (max-height:520px){body.touch #ammo{bottom:auto;top:calc(228px + env(safe-area-inset-top,0px))}}
 @media (max-width:560px){body.touch #ammo{bottom:calc(252px + env(safe-area-inset-bottom,0px))}}
+#nav{position:absolute;left:50%;top:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid #ffd34d;border-radius:12px;padding:6px 14px 6px 8px;white-space:nowrap}
+#navArrow{width:40px;height:40px;transition:transform .2s linear}#navText{font:700 18px Oswald,sans-serif;text-transform:uppercase;letter-spacing:.04em;color:#ffd34d}#navDist{font-size:12px;color:var(--muted)}
+body.touch #nav{top:calc(112px + env(safe-area-inset-top,0px));padding:4px 10px 4px 6px}body.touch #navArrow,body.touch #navArrow svg{width:32px;height:32px}body.touch #navText{font-size:15px}
+@media (max-width:560px){body.touch #nav{top:auto;bottom:calc(300px + env(safe-area-inset-bottom,0px))}}
+#mapRoute{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 </style>
 <div id="loading"><div class="lw"><div>Loading the valley…</div><div class="lbar"><i id="loadbar"></i></div><div class="tip" id="tip">Tip: Skin runs out of breath in about 3 seconds. Plan accordingly.</div></div></div>
 
@@ -250,6 +255,7 @@ body.touch #ammo{bottom:calc(150px + env(safe-area-inset-bottom,0px));right:max(
   <div id="scope" class="hidden"></div>
   <div id="scopeinfo" class="hidden"></div>
   <div id="hitmark"></div>
+  <div id="nav" class="hidden"><div id="navArrow"><svg viewBox="0 0 40 40" width="40" height="40"><path d="M20 3 L34 33 L20 25 L6 33 Z" fill="#ffd34d" stroke="#1b1309" stroke-width="2" stroke-linejoin="round"/></svg></div><div><div id="navText"></div><div id="navDist"></div></div></div>
   <div id="ammo" class="hidden"></div>
   <div id="lock" class="hidden">Click to look around</div>
   <div id="touchui">
@@ -261,7 +267,7 @@ body.touch #ammo{bottom:calc(150px + env(safe-area-inset-bottom,0px));right:max(
       <button id="tShoot" class="big">Shoot</button>
     </div>
   </div>
-  <div id="map" class="hidden"><div class="box" id="mapbox"><div class="cap">Salmon, ID</div></div></div>
+  <div id="map" class="hidden"><div class="box" id="mapbox"><svg id="mapRoute" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg><div class="cap">Salmon, ID</div></div></div>
 </div>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>

@@ -505,7 +505,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') toggleVehicle();
   if (e.code === 'KeyR' && !player.inVehicle) startReload();
   if (e.code === 'KeyR' && player.inVehicle) { const v = player.inVehicle; v.speed = 0; v.pos.y += 2; if (has('hewitt')) { toast('Recovered', 'Hewitt fixed it. Of course he did.', 1.8); say('Hewitt', pick(['I could fix that. …Fixed.', 'Bent tie rod. Got it.'])); } else toast('Recovered', 'Back on four wheels.', 1.5); }
-  if (e.code === 'KeyM') $('map').classList.toggle('hidden');
+  if (e.code === 'KeyM') { $('map').classList.toggle('hidden'); drawMapRoute(); }
   if (e.code === 'KeyH') $('help').classList.toggle('hidden');
   if (e.code === 'KeyQ') setScope(!scoping);
   if (e.code === 'KeyC') player.crouch = !player.crouch;
@@ -544,7 +544,7 @@ if (touchMode) {
   const tap = (id, fn) => $(id).addEventListener('click', (e) => { e.preventDefault(); if (started) fn(); });
   tap('tTruck', toggleVehicle); tap('tScope', () => setScope(!scoping)); tap('tShoot', () => (scoping ? shoot() : setScope(true)));
   tap('tCrouch', () => { player.crouch = !player.crouch; $('tCrouch').classList.toggle('on', player.crouch); });
-  tap('tTalk', talk); tap('tMap', () => $('map').classList.toggle('hidden'));
+  tap('tTalk', talk); tap('tMap', () => { $('map').classList.toggle('hidden'); drawMapRoute(); });
   tap('tZoom', () => (scoping ? cycleZoom() : setScope(true))); tap('tPhoto', takePhoto);
   const run = $('tRun');
   run.addEventListener('pointerdown', () => { touchSprint = true; run.classList.add('on'); });
@@ -881,6 +881,92 @@ function setWaypoint(x, z, labelText) {
   waypoint = x == null ? null : { x, z, label: labelText };
   beam.visible = !!waypoint; mapDots.wp.d.style.display = mapDots.wp.l.style.display = waypoint ? '' : 'none';
   if (waypoint) { beam.position.set(x, heightAt(x, z) + 130, z); setDot('wp', x, z); mapDots.wp.l.textContent = labelText; }
+  if (waypoint && labelText && !/^Dale/.test(labelText)) buildRoute(x, z); else navOn = false;
+}
+
+// ---- road navigation: route along real roads to the waypoint (arrows on the road, banner, map line, crew callouts)
+const navField = new Int32Array(RN * RN); let navOn = false, navPath = [], navT = 0, navCalloutCd = 0, lastTurnKey = '';
+const cellOf = (x, z) => [Math.floor((x + HALF) / ROADGRID), Math.floor((z + HALF) / ROADGRID)];
+const cellPos = (i, j) => [(i + 0.5) * ROADGRID - HALF, (j + 0.5) * ROADGRID - HALF];
+function nearestRoadCell(x, z, maxR = 40) {
+  const [ci, cj] = cellOf(x, z);
+  for (let r = 0; r <= maxR; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+    if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; const i = ci + di, j = cj + dj;
+    if (i >= 0 && j >= 0 && i < RN && j < RN && roadCells[j * RN + i]) return [i, j];
+  }
+  return null;
+}
+function buildRoute(tx, tz) { // BFS over road cells, distance-to-target field
+  navField.fill(-1); const start = nearestRoadCell(tx, tz, 60); if (!start) { navOn = false; return; }
+  const q = new Int32Array(RN * RN); let h = 0, t = 0; const s0 = start[1] * RN + start[0]; navField[s0] = 0; q[t++] = s0;
+  while (h < t) { const c = q[h++], ci = c % RN, cj = (c / RN) | 0, d = navField[c] + 1;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const i = ci + di, j = cj + dj; if (i < 0 || j < 0 || i >= RN || j >= RN) continue; const n = j * RN + i; if (navField[n] >= 0 || !roadCells[n]) continue; navField[n] = d; q[t++] = n; } }
+  navOn = true; navT = 0;
+}
+// snap route points onto the real road centerlines (segments bucketed in 60 m cells)
+const SEGB = new Map(), SB = 60; for (const r of vec.roads) for (let k = 1; k < r.pts.length; k++) { const a = r.pts[k - 1], b = r.pts[k], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / SB) + 1;
+  for (let t = 0; t <= n; t++) { const key = Math.floor((a[0] + (b[0] - a[0]) * t / n) / SB) + ',' + Math.floor((a[1] + (b[1] - a[1]) * t / n) / SB); let L = SEGB.get(key); if (!L) SEGB.set(key, L = []); if (L[L.length - 1] !== r.pts) L.push([a, b]); } }
+function snapToRoad(p) { const ci = Math.floor(p[0] / SB), cj = Math.floor(p[1] / SB); let best = p, bd = 18 * 18;
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const L = SEGB.get((ci + di) + ',' + (cj + dj)); if (!L) continue;
+    for (const [a, b] of L) { const vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vz) / l2)), x = a[0] + vx * t, z = a[1] + vz * t, d = (x - p[0]) ** 2 + (z - p[1]) ** 2; if (d < bd) { bd = d; best = [x, z]; } } }
+  return best; }
+function tracePath(x, z, maxSteps) { // follow the field downhill from the nearest road cell
+  const s = nearestRoadCell(x, z, 30); if (!s || navField[s[1] * RN + s[0]] < 0) return [];
+  let [i, j] = s; const out = [cellPos(i, j)];
+  for (let k = 0; k < maxSteps; k++) { const c = navField[j * RN + i]; if (c <= 0) break; let bi = i, bj = j, bd = c;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= RN || nj >= RN) continue; const v = navField[nj * RN + ni]; if (v >= 0 && v < bd) { bd = v; bi = ni; bj = nj; } }
+    if (bi === i && bj === j) break; i = bi; j = bj; out.push(cellPos(i, j)); }
+  // smooth the stair-steps a little
+  for (let it = 0; it < 2; it++) for (let k = 1; k < out.length - 1; k++) out[k] = [(out[k - 1][0] + out[k][0] * 2 + out[k + 1][0]) / 4, (out[k - 1][1] + out[k][1] * 2 + out[k + 1][1]) / 4];
+  return out.map(snapToRoad);
+}
+// chevrons on the road
+const chevGeo = (() => { const sh = new THREE.Shape(); sh.moveTo(-1.1, -0.5); sh.lineTo(0, 0.6); sh.lineTo(1.1, -0.5); sh.lineTo(0.75, -0.85); sh.lineTo(0, -0.05); sh.lineTo(-0.75, -0.85); sh.closePath(); const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.scale(1, 1, -1); return g; })();
+const chevMat = new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
+const chevs = []; for (let i = 0; i < 24; i++) { const m = new THREE.Mesh(chevGeo, chevMat); m.visible = false; m.renderOrder = 3; m.rotation.order = 'YXZ'; m.rotation.x = -0.55; scene.add(m); chevs.push(m); }
+function updateNav(dt) {
+  navCalloutCd -= dt;
+  const show = navOn && waypoint && Math.hypot(waypoint.x - player.pos.x, waypoint.z - player.pos.z) > 60;
+  if (!show) { for (const c of chevs) c.visible = false; $('nav').classList.add('hidden'); return; }
+  navT -= dt; if (navT <= 0) { navT = 0.4; navPath = tracePath(player.pos.x, player.pos.z, 400); }
+  const P = navPath; let k = 0;
+  if (P.length && !onRoad(player.pos.x, player.pos.z)) { // lead-in arrows from you to the road
+    const dx = P[0][0] - player.pos.x, dz = P[0][1] - player.pos.z, d = Math.hypot(dx, dz), h = Math.atan2(dx, dz);
+    for (let u = 8; u < d && k < 8; u += Math.max(10, d / 8)) { const m = chevs[k++], x = player.pos.x + dx / d * u, z = player.pos.z + dz / d * u; m.visible = true; m.position.set(x, heightAt(x, z) + 1.6, z); m.rotation.y = h; m.scale.setScalar(player.inVehicle ? 1.4 : 0.9); }
+  }
+  // chevrons every ~18 m along the next ~420 m
+  let acc = 0; for (let n = 1; n < P.length && k < chevs.length; n++) { const dx = P[n][0] - P[n - 1][0], dz = P[n][1] - P[n - 1][1], seg = Math.hypot(dx, dz); acc += seg; if (n < 3 || acc < 18) continue; acc = 0;
+    const m = chevs[k++]; m.visible = true; m.position.set(P[n][0], heightAt(P[n][0], P[n][1]) + 1.6 + Math.sin(performance.now() / 300 + n) * 0.15, P[n][1]); m.rotation.y = Math.atan2(dx, dz); m.scale.setScalar(player.inVehicle ? 1.4 : 0.9); }
+  for (; k < chevs.length; k++) chevs[k].visible = false;
+  // banner: direction to a point ~40 m along the route (or straight to the target when off-road / far from roads)
+  const total = Math.hypot(waypoint.x - player.pos.x, waypoint.z - player.pos.z);
+  let gx = waypoint.x, gz = waypoint.z; if (P.length > 5) { const idx = Math.min(P.length - 1, 5); gx = P[idx][0]; gz = P[idx][1]; }
+  const heading = player.inVehicle ? player.inVehicle.heading : (scoping ? camYaw + Math.PI : player.yaw);
+  const rel = Math.atan2(gx - player.pos.x, gz - player.pos.z) - heading, relN = Math.atan2(Math.sin(rel), Math.cos(rel));
+  // look ahead for the next real turn
+  let turn = null, run = 0; const h0 = P.length > 6 ? Math.atan2(P[5][0] - P[0][0], P[5][1] - P[0][1]) : 0;
+  for (let n = 6; n + 5 < P.length && run < 320; n += 2) { run += ROADGRID * 2; const hn = Math.atan2(P[n + 5][0] - P[n][0], P[n + 5][1] - P[n][1]), d = Math.atan2(Math.sin(hn - h0), Math.cos(hn - h0)); if (Math.abs(d) > 0.75) { turn = { dir: d > 0 ? 'left' : 'right', dist: run, at: P[n] }; break; } }
+  // world x=east, z=south, heading 0 faces +z: positive angle change = turning toward +x = left when facing +z? convert using a cross product instead
+  if (turn) { const fx = Math.sin(h0), fz = Math.cos(h0), tx = P[Math.min(P.length - 1, P.indexOf(turn.at) + 6)][0] - turn.at[0], tz = P[Math.min(P.length - 1, P.indexOf(turn.at) + 6)][1] - turn.at[1]; turn.dir = (fx * tz - fz * tx) > 0 ? 'right' : 'left'; }
+  const offRoad = !onRoad(player.pos.x, player.pos.z) && P.length;
+  let text = offRoad ? 'Get back to the road' : turn ? `Turn ${turn.dir} in ${Math.round(turn.dist * 1.094 / 10) * 10} yd` : Math.abs(relN) > 2.2 ? 'Turn around' : 'Stay on this road';
+  $('navArrow').style.transform = `rotate(${(-relN * 180 / Math.PI).toFixed(1)}deg)`;
+  $('navText').textContent = text; $('navDist').textContent = `${waypoint.label} · ${distWord(total)}`;
+  $('nav').classList.remove('hidden');
+  // crew navigator calls out turns once
+  if (turn && player.inVehicle && turn.dist < 160 && navCalloutCd <= 0) { const key = Math.round(turn.at[0] / 30) + ',' + Math.round(turn.at[1] / 30); if (key !== lastTurnKey) { lastTurnKey = key; navCalloutCd = 12;
+    const L = turn.dir === 'left' ? 'Left' : 'Right', isAmish = mission && mission.id === 'amish', isShort = mission && mission.id === 'shortcut';
+    if (isAmish && has('dawg')) say('Dawg', pick([`${L} up here! Pie's this way.`, `${L}! ${L}! Don't miss it.`]));
+    else if (isShort && has('skin')) say('Skin', pick([`${L} up here. Trust me.`, `Take a ${L.toLowerCase()}. I know this road.`]));
+    else crewLine('ride', () => false) || (npcs.some((n) => n.mode === 'ride') && say(npcs.find((n) => n.mode === 'ride').crew.name, pick([`${L} up ahead.`, `Turn ${turn.dir} coming up.`]))); } }
+  if (!turn && Math.abs(relN) > 2.2 && player.inVehicle && navCalloutCd <= 0 && Math.abs(player.inVehicle.speed) > 5) { navCalloutCd = 15; const r = npcs.find((n) => n.mode === 'ride'); if (r) say(r.crew.name, r.crew.id === 'skin' ? 'Wrong way. I\'m telling you.' : 'Uh, I think we\'re going the wrong way.'); }
+}
+function drawMapRoute() { // yellow route line on the big map
+  const svg = $('mapRoute'); if (!svg) return;
+  if (!navOn || !waypoint) { svg.innerHTML = ''; return; }
+  const P = tracePath(player.pos.x, player.pos.z, 3000); if (P.length < 2) { svg.innerHTML = ''; return; }
+  const pts = P.filter((_, i) => i % 2 === 0).map((p) => `${((p[0] / S + 0.5) * 1000).toFixed(1)},${((p[1] / S + 0.5) * 1000).toFixed(1)}`).join(' ');
+  svg.innerHTML = `<polyline points="${pts}" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="9" stroke-linejoin="round"/><polyline points="${pts}" fill="none" stroke="#ffd34d" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 8"/>`;
 }
 mapDot('wp', '#ffd34d', 'Target'); mapDot('store', '#5aa0e0', 'Amish store (Baker)');
 mapDots.wp.d.style.display = mapDots.wp.l.style.display = 'none';
@@ -1118,7 +1204,7 @@ function updatePowers(dt, t) {
   if (tipFor && !mission && (tipFor.state === 'down' || tipFor.pos.distanceTo(player.pos) < 60)) { tipFor = null; setWaypoint(null); }
   else if (tipFor && !mission && waypoint) { waypoint.x = tipFor.pos.x; waypoint.z = tipFor.pos.z; beam.position.set(tipFor.pos.x, heightAt(tipFor.pos.x, tipFor.pos.z) + 130, tipFor.pos.z); setDot('wp', waypoint.x, waypoint.z); }
   beam.material.opacity = 0.18 + Math.sin(t * 3) * 0.08;
-  updateTins(dt, t); updateThermal(); updateMission(dt); updateKids(dt); drawAdvantage(dt);
+  updateTins(dt, t); updateThermal(); updateMission(dt); updateKids(dt); drawAdvantage(dt); updateNav(dt);
   // HUD: ability button + active effects
   const c = player.crew, el = $('abil'), pct = ab.cd > 0 ? (1 - ab.cd / ab.max) * 100 : 100;
   el.style.setProperty('--p', pct + '%'); el.classList.toggle('ready', ab.cd <= 0);
@@ -1580,4 +1666,4 @@ player.pos.y = heightAt(player.pos.x, player.pos.z);
 $('loading').classList.add('hidden');
 frame();
 // test hooks for automated playtesting
-window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
+window.RH = { player, animals, vehicles, heightAt, classify, setScope, shoot, toggleVehicle, setCrew, keys, get camYaw() { return camYaw; }, set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camIdle(v) { camIdle = v; }, npcs, truck, begin, switchTo, ammo, get nav() { return { on: navOn, path: navPath.length, chev: chevs.filter((c) => c.visible).length, first: chevs.slice(0, 3).map((c) => [c.position.x, c.position.y, c.position.z].map(Math.round)), p0: navPath.slice(0, 2), me: [player.pos.x, player.pos.y, player.pos.z].map(Math.round) }; }, chevs, scene, teleport, forceEncounter, get enc() { return enc.active && enc.active.name; }, fx, ab, useAbility, pickGadget, tinSpots, takeTin, startMission, get mission() { return mission; }, STORE, get zyn() { return zyn; } };
