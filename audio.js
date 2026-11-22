@@ -98,6 +98,16 @@ export const audio = {
       cg.gain.linearRampToValueAtTime(vol * 0.4, t0 + 0.03); cg.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.18); c.connect(cg).connect(lp); c.start(t0); c.stop(t0 + 0.2);
     }
   },
+  // simple tones: phone ring, tin pop, ability whoosh, mission chime
+  tone(freqs, dur = 0.12, gap = 0.02, type = 'sine', vol = 0.12) {
+    if (!ctx || !this.on) return; let t = ctx.currentTime;
+    for (const f of freqs) { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.value = f; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0005, t + dur); o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.02); t += dur + gap; }
+  },
+  ring() { for (let i = 0; i < 3; i++) setTimeout(() => this.tone([1320, 1660, 1320, 1660, 1320, 1660], 0.05, 0.005, 'square', 0.06), i * 700); },
+  pop() { this.tone([880, 1320], 0.06, 0.01, 'triangle', 0.15); },
+  power() { this.tone([330, 495, 660, 990], 0.07, 0, 'triangle', 0.1); },
+  chime() { this.tone([660, 830, 990, 1320], 0.14, 0.03, 'sine', 0.12); },
+  fail() { this.tone([400, 300, 220], 0.18, 0.03, 'triangle', 0.12); },
   door() {
     if (!ctx) return; const t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500; const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);

@@ -3,7 +3,8 @@
 // Game stats: stamina, walk (walking speed), aim (marksmanship), hike (uphill tolerance), all 1-10.
 export const CREW = [
   {
-    id: 'hewitt', name: 'Hewitt', role: 'The Hunter',
+    id: 'hewitt', power: 'Dead Calm', powerDesc: '8 sec of rock-steady aim with a little slow-mo', passive: 'Tunes the truck: faster off-road, and he fixes it when you recover it',
+    name: 'Hewitt', role: 'The Hunter',
     look: { shirt: 0x5b4a36, pants: 0x3c3a33, cap: 0x1d1d1d, skin: 0xe7b896, hair: 0x6b4a2b, beard: 'stubble' },
     stats: { stamina: 10, walk: 7, aim: 10, hike: 8 },
     card: [['Marksmanship', 10], ['Handiness', 10], ['Stamina', 10], ['Thinks Before Talking', 9]],
@@ -15,13 +16,14 @@ export const CREW = [
       spot: ['Bull. Top of the ridge.', 'Buck, two o\'clock. Stay low.', 'Hold up. Animals ahead.'],
       wrongElk: ['…That\'s a cow, Kyle.'],
       select: ['…', 'Yep.'],
-      idle: ["Hewitt is thinking about it.", "…Yep.", "I could fix that."],
+      idle: ["Hewitt is thinking about it.", "…Yep.", "I could fix that.", "Anybody seen my tin?"],
       harvest: ['Clean shot.', 'That one was easy.'],
       miss: ['…Huh.'],
     },
   },
   {
-    id: 'kyle', name: 'Kyle', role: 'The Mountain Goat',
+    id: 'kyle', power: 'Second Wind', powerDesc: '20 sec of uphill sprinting with no stamina drain', passive: 'Packs your animal out, so you are fresh after every tag',
+    name: 'Kyle', role: 'The Mountain Goat',
     look: { shirt: 0x7c7b6c, pants: 0x6d6c5e, cap: 0x6f7368, skin: 0xe9b991, hair: 0x5a3c22, beard: 'mustache', beanie: true },
     stats: { stamina: 9, walk: 8, aim: 7, hike: 9 },
     card: [['Stamina', 9], ['Mustache', 10], ['Hiking', 9], ['Dad Duties', 10]],
@@ -39,7 +41,8 @@ export const CREW = [
     },
   },
   {
-    id: 'l', name: 'L', role: 'The Socialite',
+    id: 'l', power: 'Small Talk', powerDesc: 'A local rancher stops to chat and tells you where the herd is', passive: 'More crew banter. He keeps everybody talking',
+    name: 'L', role: 'The Socialite',
     look: { shirt: 0x26272b, pants: 0x8a8b78, cap: 0x2b2b2b, skin: 0xeec2a0, hair: 0x2a1d14, beard: 'stubble' },
     stats: { stamina: 8, walk: 3, aim: 7, hike: 7 },
     card: [['Talks to Everybody', 10], ['Funny', 9], ['Stamina', 8], ['Walking Speed', 3]],
@@ -57,7 +60,8 @@ export const CREW = [
     },
   },
   {
-    id: 'dawg', name: 'Dawg', role: 'The Foodie',
+    id: 'dawg', power: 'Snack Break', powerDesc: 'Hands out sandwiches: full stamina for everyone, faster recovery', passive: 'Spots dinner from farther away',
+    name: 'Dawg', role: 'The Foodie',
     look: { shirt: 0x47474a, pants: 0x1d1d1f, cap: 0xe9e1cf, skin: 0xe2b28c, hair: 0x2b1d14, beard: 'full' },
     stats: { stamina: 6, walk: 6, aim: 8, hike: 1 },
     card: [['Hunting', 8], ['Appetite', 11], ['Amish Store Loyalty', 10], ['Hiking', 1]],
@@ -76,7 +80,8 @@ export const CREW = [
     },
   },
   {
-    id: 'slime', name: 'Slime', role: 'The Gadget Guy',
+    id: 'slime', power: 'Gadget Wheel', powerDesc: 'Rangefinder, thermal binoculars or a scout drone', passive: 'The Xterra is a gear locker: reloads your ability',
+    name: 'Slime', role: 'The Gadget Guy',
     look: { shirt: 0x7a2e2a, pants: 0x5d7fa6, cap: 0xa7a9ab, skin: 0xd9a57f, hair: 0x2b1a10, beard: 'goatee' },
     stats: { stamina: 8, walk: 7, aim: 8, hike: 7 }, // stamina hidden for Slime (owner request), kept neutral
     card: [['Versatility', 10], ['Gadgets', 11], ['Xterra Storage', 10]],
@@ -94,7 +99,8 @@ export const CREW = [
     },
   },
   {
-    id: 'skin', name: 'Skin', role: 'The Connector (Dad)',
+    id: 'skin', power: 'I Know a Guy', powerDesc: 'A buddy drops the truck off, and Eagle Valley elk calm down for a while', passive: 'Knows a shortcut when you fast travel. Sometimes it is the wrong road',
+    name: 'Skin', role: 'The Connector (Dad)',
     look: { shirt: 0xe6e1d3, pants: 0x5d7fb0, cap: null, skin: 0xedb592, hair: 0x9a8a78, beard: 'mustache', bald: true },
     stats: { stamina: 2, walk: 5, aim: 7, hike: 3 },
     card: [['Connections', 10], ['Opinions', 11], ['Directness', 10], ['Stamina', 2]],
