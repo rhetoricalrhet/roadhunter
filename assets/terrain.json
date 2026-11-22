@@ -1,0 +1,20 @@
+{
+ "grid": 1025,
+ "size_m": 13800.053622388632,
+ "min_elev": 1246.86376953125,
+ "max_elev": 2848.048583984375,
+ "nw": [
+  -113.818359375,
+  45.213003555993964
+ ],
+ "se": [
+  -113.642578125,
+  45.089035564831015
+ ],
+ "mercator_scale": 0.7052401260464932,
+ "sources": [
+  "USGS 3DEP elevation (elevation.nationalmap.gov), public domain",
+  "USGS NAIP imagery (USGSImageryOnly), public domain",
+  "Roads, water and buildings (c) OpenStreetMap contributors, ODbL"
+ ]
+}

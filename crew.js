@@ -1,0 +1,85 @@
+// RoadHunter crew. Traits come only from what the project owner described.
+// Lines are affectionate, fictional parody, not real quotes.
+// Game stats: stamina, walk (walking speed), aim (marksmanship), hike (uphill tolerance), all 1-10.
+export const CREW = [
+  {
+    id: 'hewitt', name: 'Hewitt', role: 'The Hunter',
+    look: { shirt: 0x5b4a36, pants: 0x3c3a33, cap: 0x1d1d1d, skin: 0xe7b896, hair: 0x6b4a2b, beard: 'stubble' },
+    stats: { stamina: 10, walk: 7, aim: 10, hike: 8 },
+    card: [['Marksmanship', 10], ['Handiness', 10], ['Stamina', 10], ['Thinks Before Talking', 9]],
+    ability: 'Steadiest aim in the crew',
+    lines: {
+      select: ['…', 'Yep.'],
+      idle: ["Hewitt is thinking about it.", "…Yep.", "I could fix that."],
+      harvest: ['Clean shot.', 'That one was easy.'],
+      miss: ['…Huh.'],
+    },
+  },
+  {
+    id: 'kyle', name: 'Kyle', role: 'The Mountain Goat',
+    look: { shirt: 0x7c7b6c, pants: 0x6d6c5e, cap: 0x6f7368, skin: 0xe9b991, hair: 0x5a3c22, beard: 'mustache', beanie: true },
+    stats: { stamina: 9, walk: 8, aim: 7, hike: 9 },
+    card: [['Stamina', 9], ['Mustache', 10], ['Hiking', 9], ['Dad Duties', 10]],
+    ability: 'Barely gets tired',
+    lines: {
+      select: ['I could do this ridge twice.'],
+      idle: ['I could do this ridge twice.', 'Hold on, the kids are calling.', 'You guys coming or what?'],
+      harvest: ['Let\'s go!'],
+      miss: ['Wind got it.'],
+    },
+  },
+  {
+    id: 'l', name: 'L', role: 'The Socialite',
+    look: { shirt: 0x26272b, pants: 0x8a8b78, cap: 0x2b2b2b, skin: 0xeec2a0, hair: 0x2a1d14, beard: 'stubble' },
+    stats: { stamina: 8, walk: 3, aim: 7, hike: 7 },
+    card: [['Talks to Everybody', 10], ['Funny', 9], ['Stamina', 8], ['Walking Speed', 3]],
+    ability: 'Makes friends with anyone',
+    lines: {
+      select: ["I'm coming, I'm coming."],
+      idle: ["I'm coming, I'm coming.", 'Hold up, I know that guy.', 'Nice day for a stroll.'],
+      harvest: ['Wait till I tell everybody about this.'],
+      miss: ['I was being nice to it.'],
+    },
+  },
+  {
+    id: 'dawg', name: 'Dawg', role: 'The Foodie',
+    look: { shirt: 0x47474a, pants: 0x1d1d1f, cap: 0xe9e1cf, skin: 0xe2b28c, hair: 0x2b1d14, beard: 'full' },
+    stats: { stamina: 6, walk: 6, aim: 8, hike: 1 },
+    card: [['Hunting', 8], ['Appetite', 11], ['Amish Store Loyalty', 10], ['Hiking', 1]],
+    ability: 'Gets stamina back fast from snacks',
+    lines: {
+      select: ['When\'s lunch?'],
+      idle: ['Is the Amish store open today?', 'When\'s lunch?', 'Did anybody pack snacks?'],
+      uphill: ['Nobody said there would be hiking.', 'Why is it always uphill?', 'Can we drive up there instead?'],
+      harvest: ['Now THAT is dinner.'],
+      miss: ['I was hungry, it threw me off.'],
+    },
+  },
+  {
+    id: 'slime', name: 'Slime', role: 'The Gadget Guy',
+    look: { shirt: 0x7a2e2a, pants: 0x5d7fa6, cap: 0xa7a9ab, skin: 0xd9a57f, hair: 0x2b1a10, beard: 'goatee' },
+    stats: { stamina: 8, walk: 7, aim: 8, hike: 7 }, // stamina hidden for Slime (owner request), kept neutral
+    card: [['Versatility', 10], ['Gadgets', 11], ['Xterra Storage', 10]],
+    ability: 'Has a gadget for everything',
+    lines: {
+      select: ['Got a gadget for that.'],
+      idle: ['Got a gadget for that.', 'Hang on, it\'s in the Xterra.', 'I brought a backup for the backup.'],
+      harvest: ['Rangefinder said it would work.'],
+      miss: ['Gotta recalibrate.'],
+    },
+  },
+  {
+    id: 'skin', name: 'Skin', role: 'The Connector (Dad)',
+    look: { shirt: 0xe6e1d3, pants: 0x5d7fb0, cap: null, skin: 0xedb592, hair: 0x9a8a78, beard: 'mustache', bald: true },
+    stats: { stamina: 2, walk: 5, aim: 7, hike: 3 },
+    card: [['Connections', 10], ['Opinions', 11], ['Directness', 10], ['Stamina', 2]],
+    ability: '"I Know a Guy": opens doors',
+    lines: {
+      select: ['I know a guy.'],
+      idle: ['I know a guy.', "That's the wrong road. I'm telling you.", 'Back in my day we just walked up there.'],
+      tired: ["We're taking a break. I'm not asking.", 'You boys go on ahead.'],
+      harvest: ['Told you it would be right there.'],
+      miss: ['That was the wind. Or your fault.'],
+    },
+  },
+];
